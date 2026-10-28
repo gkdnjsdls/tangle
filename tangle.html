@@ -51,7 +51,7 @@
   }
 
   #stage { position: fixed; inset: 0; touch-action: none; }
-  #stage canvas { display: block; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
 
   .hud {
     position: fixed;
@@ -93,6 +93,8 @@
     display: flex;
     gap: 8px;
     align-items: flex-end;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
   button {
     font-family: var(--mono);
@@ -155,13 +157,13 @@
 
 <div id="stage"></div>
 
-<div class="hud">
+<div class="hud" id="hud" hidden>
   <div>조각 <b id="hN">16</b></div>
   <div>폐쇄오차 <b id="hErr">—</b></div>
   <div>접촉 <b id="hCon">0</b></div>
   <div><b id="hFps">—</b> fps</div>
 </div>
-<div id="lockwrap"><div id="lockbar"></div></div>
+<div id="lockwrap" hidden><div id="lockbar"></div></div>
 
 <div id="panel" hidden>
   <div class="row">
@@ -200,8 +202,9 @@
 </div>
 
 <div class="corner">
+  <button id="bTheme">자동</button>
   <button id="bSound" aria-pressed="true">소리</button>
-  <button id="bShuffle">다시 섞기</button>
+  <button id="bShuffle">섞기</button>
   <button id="bPanel" aria-expanded="false">튜닝</button>
 </div>
 
@@ -243,6 +246,7 @@
     var bg = cs.getPropertyValue("--scene-bg").trim() || "#e8e6e1";
     var fog = cs.getPropertyValue("--scene-fog").trim() || bg;
     renderer.setClearColor(new THREE.Color(bg), 1);
+    // near/far are rewritten from the camera distance every frame in placeCamera
     scene.fog = new THREE.Fog(new THREE.Color(fog), 11, 26);
   }
   readTheme();
@@ -491,6 +495,7 @@
     clickAcc = new Array(n).fill(0);
     fk(theta);
     recenter();
+    snapFit();
   }
 
   function save() {
@@ -821,13 +826,57 @@
   }
 
   // ---- camera orbit -------------------------------------------------------
-  var orbit = { az: 0.7, el: 0.45, dist: 9.5 };
+  // The distance is derived, not fixed: a fixed one frames a 4:3 desktop window
+  // fine and then fills a portrait phone with a single elbow, because the
+  // horizontal field of view narrows with the aspect ratio. zoom is the user's
+  // pinch on top of whatever distance currently frames the whole loop.
+  var orbit = { az: 0.7, el: 0.45, zoom: 1 };
+  var fitDist = 10, fitP = new THREE.Vector3();
+  var fitDir = new THREE.Vector3(), fitRight = new THREE.Vector3(), fitUp = new THREE.Vector3();
+  var WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+  // Smallest distance that still projects every point of the toy inside the
+  // frame. Fitting a bounding sphere instead would be simpler, but a loop is
+  // nothing like a sphere: on a portrait phone that wastes most of the screen.
+  function computeFit() {
+    var ce = Math.cos(orbit.el), se = Math.sin(orbit.el);
+    fitDir.set(ce * Math.sin(orbit.az), se, ce * Math.cos(orbit.az));
+    fitRight.copy(WORLD_UP).cross(fitDir).normalize();
+    fitUp.copy(fitDir).cross(fitRight);
+
+    var vT = Math.tan(camera.fov * Math.PI / 360);   // half-angle tangents
+    var hT = vT * camera.aspect;
+    var need = 0, i, s;
+    for (i = 0; i < N; i++) {
+      scratchRz.makeRotationZ(theta[i]);
+      scratchM.copy(frames[i]).multiply(scratchRz).premultiply(anchor);
+      for (s = 0; s < SAMPLES; s++) {
+        fitP.copy(sampleLocal[s]).applyMatrix4(scratchM);
+        // a point at depth (D - f) with lateral offset dx needs D >= f + dx/tan
+        var f = fitP.dot(fitDir);
+        var a = f + (Math.abs(fitP.dot(fitRight)) + TUBE) / hT;
+        var b = f + (Math.abs(fitP.dot(fitUp)) + TUBE) / vT;
+        if (a > need) need = a;
+        if (b > need) need = b;
+      }
+    }
+    return Math.max(need * 1.10, 3);   // a little air so nothing kisses the edge
+  }
+
+  function snapFit() { fitDist = computeFit(); }
+
   function placeCamera() {
+    var d = fitDist * orbit.zoom;
+    // The fog has to track the camera. Fixed near/far framed a desktop window
+    // and then swallowed the whole toy on a portrait phone, where fitting the
+    // loop into a much narrower horizontal field of view needs three times the
+    // distance: the toy sat past the far plane and faded into the background.
+    if (scene.fog) { scene.fog.near = d * 0.9; scene.fog.far = d * 2.0; }
     var ce = Math.cos(orbit.el), se = Math.sin(orbit.el);
     camera.position.set(
-      orbit.dist * ce * Math.sin(orbit.az),
-      orbit.dist * se,
-      orbit.dist * ce * Math.cos(orbit.az)
+      d * ce * Math.sin(orbit.az),
+      d * se,
+      d * ce * Math.cos(orbit.az)
     );
     camera.lookAt(0, 0, 0);
   }
@@ -864,7 +913,7 @@
     if (pointers.size === 2) {
       var pts = Array.from(pointers.values());
       var dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y;
-      pinch = { d0: Math.hypot(dx, dy), dist0: orbit.dist };
+      pinch = { d0: Math.hypot(dx, dy), zoom0: orbit.zoom };
       drag = null; orbiting = null;
       return;
     }
@@ -933,7 +982,7 @@
       var pts = Array.from(pointers.values());
       var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       if (pinch.d0 > 0) {
-        orbit.dist = Math.max(4, Math.min(22, pinch.dist0 * (pinch.d0 / d)));
+        orbit.zoom = Math.max(0.4, Math.min(2.5, pinch.zoom0 * (pinch.d0 / d)));
       }
       return;
     }
@@ -1071,6 +1120,12 @@
       meshes[k].matrix.copy(frames[k]).multiply(scratchRz);
     }
 
+    // Re-frame only between gestures: re-fitting mid-twist would make the toy
+    // breathe in and out under the finger.
+    if (!drag && !orbiting && !pinch) {
+      fitDist += (computeFit() - fitDist) * Math.min(1, dt * 1.5);
+    }
+
     // slow ambient orbit once the toy has been left alone
     if (!reduceMotion && !drag && !orbiting && !pinch && now - lastInteract > 4000) {
       orbit.az += dt * 0.035;
@@ -1093,9 +1148,15 @@
 
   function resize() {
     var w = stage.clientWidth, h = stage.clientHeight;
-    renderer.setSize(w, h, false);
+    // updateStyle must stay on. With it off the canvas gets no CSS size and is
+    // laid out at its drawing-buffer size, so on a devicePixelRatio-2 phone it
+    // renders twice the viewport and the centred toy lands in the corner. A
+    // desktop at ratio 1 hides the bug completely.
+    renderer.setSize(w, h);
     camera.aspect = w / Math.max(h, 1);
     camera.updateProjectionMatrix();
+    snapFit();          // a rotated phone changes which field of view is narrower
+    placeCamera();
   }
   window.addEventListener("resize", resize);
 
@@ -1116,10 +1177,41 @@
 
   var panel = document.getElementById("panel");
   var bPanel = document.getElementById("bPanel");
+  var hud = document.getElementById("hud");
+  var lockwrap = document.getElementById("lockwrap");
   bPanel.addEventListener("click", function () {
     panel.hidden = !panel.hidden;
     bPanel.setAttribute("aria-expanded", String(!panel.hidden));
+    // the readouts are workbench instruments; keep them with the workbench
+    hud.hidden = panel.hidden;
+    lockwrap.hidden = panel.hidden;
   });
+
+  // Theme. The page follows the phone by default, but "follow the phone" is not
+  // always what you want from something you pick up to fiddle with, so let it
+  // be overridden and remember the choice.
+  var THEMES = ["system", "light", "dark"];
+  var THEME_LABEL = { system: "자동", light: "밝게", dark: "어둡게" };
+  var bTheme = document.getElementById("bTheme");
+  var themeIdx = 0;
+  try {
+    var savedTheme = localStorage.getItem("tangle-theme");
+    if (savedTheme && THEMES.indexOf(savedTheme) >= 0) themeIdx = THEMES.indexOf(savedTheme);
+  } catch (e) { /* private window or blocked storage */ }
+
+  function applyTheme() {
+    var m = THEMES[themeIdx];
+    if (m === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", m);
+    bTheme.textContent = THEME_LABEL[m];
+    readTheme();   // the clear colour and fog live in WebGL, not in CSS
+    try { localStorage.setItem("tangle-theme", m); } catch (e) { /* ignore */ }
+  }
+  bTheme.addEventListener("click", function () {
+    themeIdx = (themeIdx + 1) % THEMES.length;
+    applyTheme();
+  });
+  applyTheme();
 
   var bSound = document.getElementById("bSound");
   bSound.addEventListener("click", function () {

@@ -3,7 +3,7 @@
    phone that has opened it once can run it with no network at all. Bump CACHE
    whenever index.html changes, or installed copies will keep the old build. */
 
-var CACHE = "tangle-v5";
+var CACHE = "tangle-v6";
 
 var SHELL = [
   "./",
