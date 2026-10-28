@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e8e6e1">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16181d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="?깊겢">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<style>
+  /* the reset the Artifact skeleton normally supplies */
+  :root {
+    color-scheme: light;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body { margin: 0; font: 14px system-ui, -apple-system, "Segoe UI", sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>탱클 피젯</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  /* Layout: full-bleed WebGL stage; all chrome floats over it, anchored to safe-area corners. */
+  :root {
+    --scene-bg: #e8e6e1;
+    --scene-fog: #d9d6cf;
+    --fg: #22201d;
+    --fg-dim: #76716a;
+    --panel: rgba(255, 255, 255, 0.82);
+    --panel-line: rgba(34, 32, 29, 0.14);
+    --accent: #c4502a;
+    --track: rgba(34, 32, 29, 0.16);
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --scene-bg: #16181d;
+      --scene-fog: #0e1014;
+      --fg: #e7e5e1;
+      --fg-dim: #8a8782;
+      --panel: rgba(28, 31, 37, 0.82);
+      --panel-line: rgba(231, 229, 225, 0.16);
+      --accent: #f08a5d;
+      --track: rgba(231, 229, 225, 0.18);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --scene-bg: #16181d;
+    --scene-fog: #0e1014;
+    --fg: #e7e5e1;
+    --fg-dim: #8a8782;
+    --panel: rgba(28, 31, 37, 0.82);
+    --panel-line: rgba(231, 229, 225, 0.16);
+    --accent: #f08a5d;
+    --track: rgba(231, 229, 225, 0.18);
+    color-scheme: dark;
+  }
+
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--scene-bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #stage { position: fixed; inset: 0; touch-action: none; }
+  #stage canvas { display: block; }
+
+  .hud {
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    left: 0;
+    padding-block: 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex;
+    gap: 14px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .hud b { font-weight: 600; color: var(--fg); }
+  .hud .bad { color: var(--accent); }
+
+  #lockwrap {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 38px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    width: 92px; height: 3px;
+    background: var(--track);
+    border-radius: 2px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  #lockbar { height: 100%; width: 0%; background: var(--accent); transition: width 0.12s linear; }
+
+  .corner {
+    position: fixed;
+    bottom: env(safe-area-inset-bottom, 0px);
+    right: 0;
+    padding-block: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  button {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--fg);
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 999px;
+    padding: 9px 15px;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  button:active { transform: scale(0.96); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #panel {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
+    right: max(16px, env(safe-area-inset-right, 0px));
+    left: max(16px, env(safe-area-inset-left, 0px));
+    max-width: 330px;
+    margin-left: auto;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 16px;
+    padding: 16px 16px 14px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    display: grid;
+    gap: 13px;
+  }
+  .row { display: grid; gap: 6px; }
+  .row label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 10px; letter-spacing: 0.05em; color: var(--fg-dim);
+  }
+  .row label span { color: var(--fg); font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 3px; border-radius: 2px;
+    background: var(--track); outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 17px; height: 17px; border: none; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { padding: 7px 12px; font-size: 11px; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .note { font-size: 10px; line-height: 1.5; color: var(--fg-dim); }
+  @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
+</style>
+</head>
+<body>
+
+
+<div id="stage"></div>
+
+<div class="hud">
+  <div>조각 <b id="hN">16</b></div>
+  <div>폐쇄오차 <b id="hErr">—</b></div>
+  <div>접촉 <b id="hCon">0</b></div>
+  <div><b id="hFps">—</b> fps</div>
+</div>
+<div id="lockwrap"><div id="lockbar"></div></div>
+
+<div id="panel" hidden>
+  <div class="row">
+    <label>잡은 관절 뻑뻑함 <span id="vStiff"></span></label>
+    <input type="range" id="sStiff" min="1" max="300" step="1" value="60">
+  </div>
+  <div class="row">
+    <label>관절 마찰 <span id="vFric"></span></label>
+    <input type="range" id="sFric" min="0.80" max="0.995" step="0.001" value="0.93">
+  </div>
+  <div class="row">
+    <label>감쇠 λ <span id="vLam"></span></label>
+    <input type="range" id="sLam" min="0.001" max="0.2" step="0.001" value="0.02">
+  </div>
+  <div class="row">
+    <label>쓸기 여운 <span id="vSweep"></span></label>
+    <input type="range" id="sSweep" min="0" max="2.5" step="0.05" value="1.2">
+  </div>
+  <div class="row">
+    <label>조각 수</label>
+    <div class="seg" id="segN">
+      <button data-n="12">12</button>
+      <button data-n="16" aria-pressed="true">16</button>
+      <button data-n="18">18</button>
+      <button data-n="20">20</button>
+      <button data-n="24">24</button>
+    </div>
+  </div>
+  <div class="row">
+    <label>자기충돌</label>
+    <div class="seg">
+      <button id="bColl" aria-pressed="true">켬</button>
+    </div>
+  </div>
+  <p class="note">조각을 끌면 그 관절이 돌고, 고리 전체가 받아줍니다. 조각을 가로질러 쭉 쓸면 지나간 관절들이 차례로 풀려납니다. 배경을 끌면 시점이 돕니다. 폐쇄오차가 0에 머무르면 그 조각 수는 고리로 닫힙니다.</p>
+</div>
+
+<div class="corner">
+  <button id="bSound" aria-pressed="true">소리</button>
+  <button id="bShuffle">다시 섞기</button>
+  <button id="bPanel" aria-expanded="false">튜닝</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- geometry constants -------------------------------------------------
+  var R = 1.0;          // elbow radius
+  var TUBE = 0.36;      // tube radius
+  var N = 16;           // segment count (= joint count)
+
+  // Fixed 90-degree bend transform B: entry frame at origin facing +Z,
+  // exit at (R,0,R) facing +X.  B = Translate(R,0,R) * RotY(90deg)
+  var B = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+  B.setPosition(R, 0, R);
+
+  // ---- scene --------------------------------------------------------------
+  var stage = document.getElementById("stage");
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+  var group = new THREE.Group();
+  scene.add(group);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x45484f, 0.72));
+  var key = new THREE.DirectionalLight(0xffffff, 0.78);
+  key.position.set(4, 6, 5);
+  scene.add(key);
+  var rim = new THREE.DirectionalLight(0xbcd2ff, 0.4);
+  rim.position.set(-5, -2, -4);
+  scene.add(rim);
+
+  function readTheme() {
+    var cs = getComputedStyle(document.documentElement);
+    var bg = cs.getPropertyValue("--scene-bg").trim() || "#e8e6e1";
+    var fog = cs.getPropertyValue("--scene-fog").trim() || bg;
+    renderer.setClearColor(new THREE.Color(bg), 1);
+    scene.fog = new THREE.Fog(new THREE.Color(fog), 11, 26);
+  }
+  readTheme();
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", readTheme);
+  }
+
+  // Elbow geometry, re-based so the piece enters at the origin heading +Z.
+  // Default TorusGeometry runs (R,0,0) -> (0,R,0) in the XY plane; this
+  // rotation maps X->-X, Y->Z, Z->Y, then shifts the arc centre to (R,0,0).
+  var baseGeo = new THREE.TorusGeometry(R, TUBE, 18, 30, Math.PI / 2);
+  baseGeo.applyMatrix4(new THREE.Matrix4().set(
+    -1, 0, 0, R,
+     0, 0, 1, 0,
+     0, 1, 0, 0,
+     0, 0, 0, 1
+  ));
+
+  // ---- state --------------------------------------------------------------
+  var theta = [];       // joint angles
+  var prevTheta = [];   // last frame's angles, for driving the click track
+  var omega = [];       // joint angular velocities
+  var frames = [];      // entry frame of each segment (before its own RotZ)
+  var prevPos = [];     // last frame's segment origins, for drift removal
+  var meshes = [];
+  var lockness = 0;     // 0 = free, 1 = jammed against a singular configuration
+  var anchor = new THREE.Matrix4();   // display transform: solver space -> world
+
+  var tuning = { stiff: 60, friction: 0.93, lambda: 0.02, sweep: 1.2 };
+
+  var scratchRz = new THREE.Matrix4();
+  var scratchM = new THREE.Matrix4();
+  var scratchQ = new THREE.Quaternion();
+
+  function buildChain(n) {
+    meshes.forEach(function (m) {
+      group.remove(m);
+      m.material.dispose();
+    });
+    meshes = [];
+    frames = [];
+    prevPos = [];
+    N = n;
+    for (var i = 0; i < N; i++) {
+      frames.push(new THREE.Matrix4());
+      prevPos.push(new THREE.Vector3());
+      var mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(i / N, 0.62, 0.55),
+        roughness: 0.34,
+        metalness: 0.02
+      });
+      var mesh = new THREE.Mesh(baseGeo, mat);
+      mesh.matrixAutoUpdate = false;
+      mesh.userData.index = i;
+      group.add(mesh);
+      meshes.push(mesh);
+    }
+    document.getElementById("hN").textContent = String(N);
+  }
+
+  // ---- forward kinematics -------------------------------------------------
+  // F_0 = I;  F_{i+1} = F_i * RotZ(theta_i) * B.  Closure wants F_N = I.
+  var FN = new THREE.Matrix4();
+  function fk(th) {
+    FN.identity();
+    for (var i = 0; i < N; i++) {
+      frames[i].copy(FN);
+      scratchRz.makeRotationZ(th[i]);
+      FN.multiply(scratchRz).multiply(B);
+    }
+    return FN;
+  }
+
+  // Closure error as a 6-vector: translation of F_N, then its rotation as
+  // an axis*angle vector.  Both are zero exactly when the loop closes.
+  var err = new Float64Array(6);
+  function closureError(m) {
+    var e = m.elements;
+    err[0] = e[12]; err[1] = e[13]; err[2] = e[14];
+    scratchQ.setFromRotationMatrix(m);
+    var w = scratchQ.w, x = scratchQ.x, y = scratchQ.y, z = scratchQ.z;
+    if (w < 0) { w = -w; x = -x; y = -y; z = -z; }
+    if (w > 1) w = 1;
+    var s = Math.sqrt(1 - w * w);
+    if (s < 1e-8) {
+      err[3] = 2 * x; err[4] = 2 * y; err[5] = 2 * z;
+    } else {
+      var k = 2 * Math.acos(w) / s;
+      err[3] = k * x; err[4] = k * y; err[5] = k * z;
+    }
+    var n = 0;
+    for (var i = 0; i < 6; i++) n += err[i] * err[i];
+    return Math.sqrt(n);
+  }
+
+  // 6x6 solve with partial pivoting; also reports the smallest pivot, which
+  // is our cheap read on how close the linkage is to locking up.
+  function solve6(A, b, out) {
+    var n = 6, M = [], r, c, k;
+    for (r = 0; r < n; r++) {
+      M.push([A[r][0], A[r][1], A[r][2], A[r][3], A[r][4], A[r][5], b[r]]);
+    }
+    var minPiv = Infinity;
+    for (c = 0; c < n; c++) {
+      var piv = c;
+      for (r = c + 1; r < n; r++) {
+        if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+      }
+      var pv = Math.abs(M[piv][c]);
+      if (pv < minPiv) minPiv = pv;
+      if (pv < 1e-13) return -1;
+      var t = M[c]; M[c] = M[piv]; M[piv] = t;
+      for (r = c + 1; r < n; r++) {
+        var f = M[r][c] / M[c][c];
+        if (f === 0) continue;
+        for (k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+      }
+    }
+    for (r = n - 1; r >= 0; r--) {
+      var sum = M[r][n];
+      for (k = r + 1; k < n; k++) sum -= M[r][k] * out[k];
+      out[r] = sum / M[r][r];
+    }
+    return minPiv;
+  }
+
+  // ---- closure projection -------------------------------------------------
+  // One damped-least-squares Newton step distributes the closure correction
+  // across the joints.  Weight W makes a joint resist correction: the joint
+  // the finger is on gets a big weight, so the rest of the loop gives way.
+  var A6 = [], y6 = new Float64Array(6), rhs = new Float64Array(6);
+  for (var _i = 0; _i < 6; _i++) A6.push(new Float64Array(6));
+  var MAXN = 24;
+  var invW = new Float64Array(MAXN);
+  var dTh = new Float64Array(MAXN);
+  var J = [];
+  for (var _j = 0; _j < MAXN; _j++) J.push(new Float64Array(6));
+
+  var tmpAxis = new THREE.Vector3();
+  var tmpOrig = new THREE.Vector3();
+  var tmpEnd = new THREE.Vector3();
+  var tmpCross = new THREE.Vector3();
+
+  function projectOnce(th, heldIdx, lambda, heldWeight) {
+    var m = fk(th);
+    var en = closureError(m);
+    if (en < 1e-10) return { err: en, minPiv: Infinity };
+
+    tmpEnd.setFromMatrixPosition(m);
+
+    // Build J (6 x N) column by column, plus the inverse weights.
+    for (var i = 0; i < N; i++) {
+      var fe = frames[i].elements;
+      tmpAxis.set(fe[8], fe[9], fe[10]).normalize();      // local +Z in world
+      tmpOrig.set(fe[12], fe[13], fe[14]);
+      tmpCross.copy(tmpEnd).sub(tmpOrig).cross(tmpAxis).multiplyScalar(-1);
+      // cross = axis x (end - origin)
+      var Ji = J[i];
+      Ji[0] = tmpCross.x; Ji[1] = tmpCross.y; Ji[2] = tmpCross.z;
+      Ji[3] = tmpAxis.x; Ji[4] = tmpAxis.y; Ji[5] = tmpAxis.z;
+      invW[i] = 1 / (i === heldIdx ? heldWeight : 1);
+    }
+
+    // A = J W^-1 J^T + lambda I
+    for (var r = 0; r < 6; r++) {
+      for (var c = r; c < 6; c++) {
+        var s = 0;
+        for (var q = 0; q < N; q++) s += invW[q] * J[q][r] * J[q][c];
+        if (r === c) s += lambda;
+        A6[r][c] = s; A6[c][r] = s;
+      }
+      rhs[r] = -err[r];
+    }
+
+    var minPiv = solve6(A6, rhs, y6);
+    if (minPiv < 0) return { err: en, minPiv: 0 };
+
+    // dtheta = W^-1 J^T y, clamped so a big error can't fling the chain.
+    var maxStep = 0;
+    for (var i2 = 0; i2 < N; i2++) {
+      var acc = 0;
+      for (var rr = 0; rr < 6; rr++) acc += J[i2][rr] * y6[rr];
+      dTh[i2] = invW[i2] * acc;
+      var a = Math.abs(dTh[i2]);
+      if (a > maxStep) maxStep = a;
+    }
+    var scale = maxStep > 0.35 ? 0.35 / maxStep : 1;
+    for (var i3 = 0; i3 < N; i3++) th[i3] += dTh[i3] * scale;
+
+    return { err: en, minPiv: minPiv };
+  }
+
+  function project(th, heldIdx, lambda, heldWeight, iters) {
+    var res = { err: 0, minPiv: Infinity };
+    for (var k = 0; k < iters; k++) {
+      res = projectOnce(th, heldIdx, lambda, heldWeight);
+      if (res.err < 1e-10) break;
+    }
+    return res;
+  }
+
+  // ---- finding a closed configuration ------------------------------------
+  // Whether a given N closes at all is exactly what we wanted to find out,
+  // so this reports honestly instead of pretending.
+  function findClosed(n) {
+    var best = null, bestErr = Infinity;
+    for (var attempt = 0; attempt < 120; attempt++) {
+      var th = new Array(n);
+      for (var i = 0; i < n; i++) th[i] = Math.random() * Math.PI * 2;
+      var saveN = N; N = n;
+      var e = Infinity;
+      for (var it = 0; it < 260; it++) {
+        var r = projectOnce(th, -1, 0.012, 1);
+        e = r.err;
+        if (e < 1e-9) break;
+      }
+      N = saveN;
+      if (e < bestErr) { bestErr = e; best = th; }
+      if (bestErr < 1e-8) break;
+    }
+    return { theta: best, err: bestErr };
+  }
+
+  function reseed(n, useStored) {
+    buildChain(n);
+    var stored = null;
+    if (useStored) {
+      try {
+        var raw = localStorage.getItem("tangle-v0-" + n);
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length === n) stored = parsed;
+        }
+      } catch (e) { /* private window, blocked storage: fall through */ }
+    }
+    if (stored) {
+      theta = stored.slice();
+      project(theta, -1, 0.01, 1, 60);
+    } else {
+      var r = findClosed(n);
+      theta = r.theta.slice();
+    }
+    omega = new Array(n).fill(0);
+    prevTheta = theta.slice();
+    clickAcc = new Array(n).fill(0);
+    fk(theta);
+    recenter();
+  }
+
+  function save() {
+    try {
+      localStorage.setItem("tangle-v0-" + N, JSON.stringify(
+        theta.map(function (t) { return Math.round(t * 1e4) / 1e4; })
+      ));
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---- rigid drift removal ------------------------------------------------
+  // The closure solver spreads its correction over every joint, so between
+  // frames the loop picks up a net translation and rotation. That component is
+  // bookkeeping, not motion: nothing about the toy's shape changed because of
+  // it. Measure it against the previous frame and undo it on the display, so
+  // the loop deforms in place instead of swimming around the screen.
+  var A3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  var b3 = new Float64Array(3), om3 = new Float64Array(3);
+  var driftW = new Float64Array(MAXN);
+  var cPrev = new THREE.Vector3(), cCur = new THREE.Vector3();
+  var qv = new THREE.Vector3(), pv = new THREE.Vector3();
+  var dv = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+  var driftQ = new THREE.Quaternion();
+  var driftM = new THREE.Matrix4(), driftT = new THREE.Matrix4();
+
+  function solve3(A, b, out) {
+    var m = [
+      [A[0][0], A[0][1], A[0][2], b[0]],
+      [A[1][0], A[1][1], A[1][2], b[1]],
+      [A[2][0], A[2][1], A[2][2], b[2]]
+    ];
+    var r, c, k;
+    for (c = 0; c < 3; c++) {
+      var p = c;
+      for (r = c + 1; r < 3; r++) {
+        if (Math.abs(m[r][c]) > Math.abs(m[p][c])) p = r;
+      }
+      if (Math.abs(m[p][c]) < 1e-12) return false;
+      var t = m[c]; m[c] = m[p]; m[p] = t;
+      for (r = c + 1; r < 3; r++) {
+        var f = m[r][c] / m[c][c];
+        for (k = c; k < 4; k++) m[r][k] -= f * m[c][k];
+      }
+    }
+    for (r = 2; r >= 0; r--) {
+      var s = m[r][3];
+      for (k = r + 1; k < 3; k++) s -= m[r][k] * out[k];
+      out[r] = s / m[r][r];
+    }
+    return true;
+  }
+
+  function recenter() {
+    centroid.set(0, 0, 0);
+    for (var k = 0; k < N; k++) {
+      tmp2.setFromMatrixPosition(frames[k]);
+      centroid.add(tmp2);
+      prevPos[k].copy(tmp2);
+    }
+    centroid.multiplyScalar(1 / N);
+    anchor.identity();
+    anchor.setPosition(-centroid.x, -centroid.y, -centroid.z);
+    anchor.decompose(group.position, group.quaternion, group.scale);
+  }
+
+  function removeRigidDrift(heldIdx) {
+    var k, w, wsum = 0, half = N / 2;
+    cPrev.set(0, 0, 0); cCur.set(0, 0, 0);
+    for (k = 0; k < N; k++) {
+      w = 1;
+      if (heldIdx >= 0) {
+        var d = Math.abs(k - heldIdx);
+        if (d > half) d = N - d;
+        // pin the far side of the loop hard; let the grabbed side move
+        w = 0.2 + 1.8 * (d / half);
+      }
+      driftW[k] = w; wsum += w;
+      cPrev.addScaledVector(prevPos[k], w);
+      tmp2.setFromMatrixPosition(frames[k]);
+      cCur.addScaledVector(tmp2, w);
+    }
+    cPrev.multiplyScalar(1 / wsum);
+    cCur.multiplyScalar(1 / wsum);
+
+    // Small-angle fit: minimise sum w |omega x q - (p - q)|^2 over omega.
+    for (var r = 0; r < 3; r++) { b3[r] = 0; A3[r][0] = A3[r][1] = A3[r][2] = 0; }
+    for (k = 0; k < N; k++) {
+      w = driftW[k];
+      qv.setFromMatrixPosition(frames[k]).sub(cCur);
+      pv.copy(prevPos[k]).sub(cPrev);
+      dv.copy(pv).sub(qv);
+      var q2 = qv.lengthSq();
+      A3[0][0] += w * (q2 - qv.x * qv.x);
+      A3[0][1] -= w * qv.x * qv.y;
+      A3[0][2] -= w * qv.x * qv.z;
+      A3[1][0] -= w * qv.y * qv.x;
+      A3[1][1] += w * (q2 - qv.y * qv.y);
+      A3[1][2] -= w * qv.y * qv.z;
+      A3[2][0] -= w * qv.z * qv.x;
+      A3[2][1] -= w * qv.z * qv.y;
+      A3[2][2] += w * (q2 - qv.z * qv.z);
+      tmp2.copy(qv).cross(dv);
+      b3[0] += w * tmp2.x; b3[1] += w * tmp2.y; b3[2] += w * tmp2.z;
+    }
+    A3[0][0] += 1e-4; A3[1][1] += 1e-4; A3[2][2] += 1e-4;
+
+    var ok = solve3(A3, b3, om3);
+    var ax = ok ? om3[0] : 0, ay = ok ? om3[1] : 0, az = ok ? om3[2] : 0;
+    var ang = Math.sqrt(ax * ax + ay * ay + az * az);
+    if (ang > 0.3) { var sc = 0.3 / ang; ax *= sc; ay *= sc; az *= sc; ang = 0.3; }
+    if (ang > 1e-9) {
+      tmp2.set(ax / ang, ay / ang, az / ang);
+      driftQ.setFromAxisAngle(tmp2, ang);
+    } else {
+      driftQ.identity();
+    }
+
+    // L = T(cPrev) * R(drift) * T(-cCur), so that L maps current onto previous
+    driftM.makeRotationFromQuaternion(driftQ);
+    driftT.makeTranslation(-cCur.x, -cCur.y, -cCur.z);
+    driftM.multiply(driftT);
+    driftT.makeTranslation(cPrev.x, cPrev.y, cPrev.z);
+    driftM.premultiply(driftT);
+
+    anchor.multiply(driftM);
+
+    // While idle, ease back toward screen centre, so a long session of one-sided
+    // twisting can't gradually walk the toy off the edge.
+    if (heldIdx < 0) {
+      tmp2.set(0, 0, 0);
+      for (k = 0; k < N; k++) { qv.setFromMatrixPosition(frames[k]); tmp2.add(qv); }
+      tmp2.multiplyScalar(1 / N).applyMatrix4(anchor);
+      driftT.makeTranslation(-tmp2.x * 0.04, -tmp2.y * 0.04, -tmp2.z * 0.04);
+      anchor.premultiply(driftT);
+    }
+
+    anchor.decompose(group.position, group.quaternion, group.scale);
+  }
+
+  // ---- self-collision -----------------------------------------------------
+  // A closed loop folds onto itself constantly, so segments passing through
+  // each other is the most visible break with the real toy. Each elbow is a
+  // chain of capsules along its centreline; overlapping capsules are pushed
+  // apart in joint space, and the closure projection afterwards absorbs it.
+  var SAMPLES = 5;
+  var collisionOn = true;
+  var contactCount = 0;
+  var sampleLocal = [];
+  for (var sI = 0; sI < SAMPLES; sI++) {
+    var st = (Math.PI / 2) * (sI / (SAMPLES - 1));
+    sampleLocal.push(new THREE.Vector3(R - R * Math.cos(st), 0, R * Math.sin(st)));
+  }
+  var samplePts = [];
+  for (var sa0 = 0; sa0 < MAXN; sa0++) {
+    var rowPts = [];
+    for (var sb0 = 0; sb0 < SAMPLES; sb0++) rowPts.push(new THREE.Vector3());
+    samplePts.push(rowPts);
+  }
+  var segCenter = [];
+  for (var sc0 = 0; sc0 < MAXN; sc0++) segCenter.push(new THREE.Vector3());
+  var BROAD = R * 1.5 + TUBE * 2;   // conservative bound around one elbow
+
+  var cd1 = new THREE.Vector3(), cd2 = new THREE.Vector3(), cr = new THREE.Vector3();
+  function closestSeg(p1, q1, p2, q2, outA, outB) {
+    cd1.copy(q1).sub(p1);
+    cd2.copy(q2).sub(p2);
+    cr.copy(p1).sub(p2);
+    var aa = cd1.lengthSq(), ee = cd2.lengthSq(), ff = cd2.dot(cr);
+    var s = 0, t = 0, EPS = 1e-9;
+    if (aa <= EPS && ee <= EPS) { s = 0; t = 0; }
+    else if (aa <= EPS) { s = 0; t = Math.min(1, Math.max(0, ff / ee)); }
+    else {
+      var cc = cd1.dot(cr);
+      if (ee <= EPS) { t = 0; s = Math.min(1, Math.max(0, -cc / aa)); }
+      else {
+        var bb = cd1.dot(cd2);
+        var denom = aa * ee - bb * bb;
+        s = denom > EPS ? Math.min(1, Math.max(0, (bb * ff - cc * ee) / denom)) : 0;
+        t = (bb * s + ff) / ee;
+        if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -cc / aa)); }
+        else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (bb - cc) / aa)); }
+      }
+    }
+    outA.copy(cd1).multiplyScalar(s).add(p1);
+    outB.copy(cd2).multiplyScalar(t).add(p2);
+  }
+
+  var cpA = new THREE.Vector3(), cpB = new THREE.Vector3(), nrm = new THREE.Vector3();
+  var axisK = new THREE.Vector3(), origK = new THREE.Vector3(), velK = new THREE.Vector3();
+  var gradBuf = new Float64Array(MAXN), collPush = new Float64Array(MAXN);
+
+  function resolveCollisions(strength) {
+    var i, j, k, s;
+    for (i = 0; i < N; i++) {
+      scratchRz.makeRotationZ(theta[i]);
+      scratchM.copy(frames[i]).multiply(scratchRz);
+      segCenter[i].set(0, 0, 0);
+      for (s = 0; s < SAMPLES; s++) {
+        samplePts[i][s].copy(sampleLocal[s]).applyMatrix4(scratchM);
+        segCenter[i].add(samplePts[i][s]);
+      }
+      segCenter[i].multiplyScalar(1 / SAMPLES);
+      collPush[i] = 0;
+    }
+
+    var minDist = 2 * TUBE, half = N / 2, found = 0;
+    for (i = 0; i < N; i++) {
+      for (j = i + 2; j < N; j++) {
+        var ld = j - i; if (ld > half) ld = N - ld;
+        if (ld < 2) continue;
+        if (segCenter[i].distanceToSquared(segCenter[j]) > BROAD * BROAD) continue;
+        for (var ca = 0; ca < SAMPLES - 1; ca++) {
+          for (var cb = 0; cb < SAMPLES - 1; cb++) {
+            closestSeg(samplePts[i][ca], samplePts[i][ca + 1],
+                       samplePts[j][cb], samplePts[j][cb + 1], cpA, cpB);
+            nrm.copy(cpA).sub(cpB);
+            var dist = nrm.length();
+            if (dist >= minDist || dist < 1e-9) continue;
+            nrm.multiplyScalar(1 / dist);
+            found++;
+            if (found > 48) break;
+
+            // d(separation along n) / d(theta_k); joint k only moves a point
+            // on segment m when k <= m, since the chain is built from seg 0.
+            var gg = 0;
+            for (k = 0; k < N; k++) {
+              var g = 0;
+              var fe2 = frames[k].elements;
+              axisK.set(fe2[8], fe2[9], fe2[10]);
+              origK.set(fe2[12], fe2[13], fe2[14]);
+              if (k <= i) {
+                velK.copy(cpA).sub(origK).cross(axisK).multiplyScalar(-1);
+                g += nrm.dot(velK);
+              }
+              if (k <= j) {
+                velK.copy(cpB).sub(origK).cross(axisK).multiplyScalar(-1);
+                g -= nrm.dot(velK);
+              }
+              gradBuf[k] = g; gg += g * g;
+            }
+            if (gg < 1e-9) continue;
+            var step = (minDist - dist) * strength / gg;
+            for (k = 0; k < N; k++) collPush[k] += gradBuf[k] * step;
+          }
+          if (found > 48) break;
+        }
+      }
+    }
+
+    var maxP = 0;
+    for (k = 0; k < N; k++) { var ab = Math.abs(collPush[k]); if (ab > maxP) maxP = ab; }
+    var sc = maxP > 0.25 ? 0.25 / maxP : 1;
+    for (k = 0; k < N; k++) theta[k] += collPush[k] * sc;
+    contactCount = found;
+  }
+
+  // ---- sound --------------------------------------------------------------
+  // No haptics to lean on (and none at all on iOS), so the click track carries
+  // the texture: one grain per fixed slice of joint rotation, pitched and
+  // weighted by how fast that joint is turning.
+  var audioOn = true, actx = null, noiseBuf = null, master = null;
+  var clickAcc = [], clicksThisFrame = 0, prevContacts = 0, knockCool = 0;
+  var CLICK_STEP = Math.PI / 14;
+
+  function initAudio() {
+    if (!audioOn) return;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!actx) {
+      actx = new AC();
+      master = actx.createGain();
+      master.gain.value = 0.35;
+      master.connect(actx.destination);
+      var len = Math.floor(actx.sampleRate * 0.05);
+      noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+      var ch = noiseBuf.getChannelData(0);
+      for (var i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    }
+    if (actx.state === "suspended") actx.resume();
+  }
+
+  function grain(freq, amp, decay, rateLo, rateHi) {
+    if (!actx || !audioOn) return;
+    var t0 = actx.currentTime;
+    var src = actx.createBufferSource();
+    src.buffer = noiseBuf;
+    src.playbackRate.value = rateLo + Math.random() * (rateHi - rateLo);
+    var bp = actx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = freq;
+    bp.Q.value = 2.4;
+    var g = actx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(amp, t0 + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start(t0);
+    src.stop(t0 + decay + 0.01);
+  }
+
+  function updateSound(dt) {
+    clicksThisFrame = 0;
+    knockCool -= dt;
+    if (actx && audioOn) {
+      for (var k = 0; k < N; k++) {
+        var d = Math.abs(theta[k] - prevTheta[k]);
+        var speed = d / Math.max(dt, 1e-4);
+        // the closure solver nudges every joint a little every frame; only
+        // joints actually turning should be audible
+        if (speed > 0.4) clickAcc[k] += d;
+        while (clickAcc[k] > CLICK_STEP && clicksThisFrame < 3) {
+          clickAcc[k] -= CLICK_STEP;
+          clicksThisFrame++;
+          var hot = Math.min(1, speed / 6);
+          grain(900 + hot * 2200 + Math.random() * 300,
+                Math.min(0.25, 0.03 + speed * 0.03), 0.045, 0.8, 1.4);
+        }
+        if (clickAcc[k] > CLICK_STEP * 3) clickAcc[k] = CLICK_STEP * 3;
+      }
+      // a duller knock when the loop newly bumps into itself
+      if (contactCount > prevContacts + 1 && knockCool <= 0) {
+        grain(190, 0.16, 0.09, 0.4, 0.6);
+        knockCool = 0.12;
+      }
+    }
+    prevContacts = contactCount;
+    for (var p = 0; p < N; p++) prevTheta[p] = theta[p];
+  }
+
+  // ---- camera orbit -------------------------------------------------------
+  var orbit = { az: 0.7, el: 0.45, dist: 9.5 };
+  function placeCamera() {
+    var ce = Math.cos(orbit.el), se = Math.sin(orbit.el);
+    camera.position.set(
+      orbit.dist * ce * Math.sin(orbit.az),
+      orbit.dist * se,
+      orbit.dist * ce * Math.cos(orbit.az)
+    );
+    camera.lookAt(0, 0, 0);
+  }
+
+  // ---- input --------------------------------------------------------------
+  var raycaster = new THREE.Raycaster();
+  var ndc = new THREE.Vector2();
+  var pointers = new Map();
+  var drag = null;        // { id, jointIndex, localPoint }
+  var orbiting = null;    // { id, x, y }
+  var pinch = null;       // { d0, dist0 }
+  var lastInteract = performance.now();
+
+  function pointerNDC(ev, out) {
+    var rect = renderer.domElement.getBoundingClientRect();
+    out.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    out.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  function pick(ev) {
+    pointerNDC(ev, ndc);
+    scene.updateMatrixWorld(true);
+    raycaster.setFromCamera(ndc, camera);
+    var hits = raycaster.intersectObjects(meshes, false);
+    return hits.length ? hits[0] : null;
+  }
+
+  stage.addEventListener("pointerdown", function (ev) {
+    lastInteract = performance.now();
+    initAudio();   // browsers only allow audio to start from a gesture
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    stage.setPointerCapture(ev.pointerId);
+
+    if (pointers.size === 2) {
+      var pts = Array.from(pointers.values());
+      var dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y;
+      pinch = { d0: Math.hypot(dx, dy), dist0: orbit.dist };
+      drag = null; orbiting = null;
+      return;
+    }
+
+    var hit = pick(ev);
+    if (hit) {
+      var j = hit.object.userData.index;
+      var local = group.worldToLocal(hit.point.clone());
+      // Keep the grab in the segment's own coordinates, so the finger stays on
+      // the same material point however the chain shifts underneath it.
+      scratchRz.makeRotationZ(theta[j]);
+      scratchM.copy(frames[j]).multiply(scratchRz).invert();
+      drag = {
+        id: ev.pointerId, j: j,
+        segLocal: local.applyMatrix4(scratchM),
+        lastX: ev.clientX, lastY: ev.clientY, vel: 0, lastCheck: 0
+      };
+      omega[j] = 0;
+    } else {
+      orbiting = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
+    }
+  });
+
+  var projV = new THREE.Vector3();
+  function toScreen(v) {
+    var p = v.clone().project(camera);
+    var rect = renderer.domElement.getBoundingClientRect();
+    return { x: (p.x * 0.5 + 0.5) * rect.width, y: (-p.y * 0.5 + 0.5) * rect.height };
+  }
+
+  // Which segment is under the finger, in screen space rather than by raycast:
+  // during a fast sweep the finger regularly slips off the tube between two
+  // pieces, and a raycast would simply stall there.
+  var HANDOFF_PX = 55, HANDOFF_LIM = HANDOFF_PX * HANDOFF_PX;
+  var sweepP = new THREE.Vector3();
+  var scan = { i: -1, s: 2, curD2: Infinity };
+  function scanSegments(cx, cy, curIdx) {
+    var rect = renderer.domElement.getBoundingClientRect();
+    var best = -1, bestS = 2, bestZ = Infinity, curD2 = Infinity;
+    for (var i = 0; i < N; i++) {
+      scratchRz.makeRotationZ(theta[i]);
+      scratchM.copy(frames[i]).multiply(scratchRz);
+      for (var s = 1; s < SAMPLES - 1; s++) {
+        sweepP.copy(sampleLocal[s]).applyMatrix4(scratchM);
+        group.localToWorld(sweepP);
+        sweepP.project(camera);
+        if (sweepP.z > 1) continue;            // behind the camera
+        var px = (sweepP.x * 0.5 + 0.5) * rect.width + rect.left;
+        var py = (-sweepP.y * 0.5 + 0.5) * rect.height + rect.top;
+        var dd = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+        if (i === curIdx && dd < curD2) curD2 = dd;
+        // among everything under the finger, take the piece nearest the camera
+        if (dd < HANDOFF_LIM && sweepP.z < bestZ) { bestZ = sweepP.z; best = i; bestS = s; }
+      }
+    }
+    scan.i = best; scan.s = bestS; scan.curD2 = curD2;
+    return scan;
+  }
+
+  stage.addEventListener("pointermove", function (ev) {
+    if (!pointers.has(ev.pointerId)) return;
+    lastInteract = performance.now();
+    pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    if (pinch && pointers.size === 2) {
+      var pts = Array.from(pointers.values());
+      var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (pinch.d0 > 0) {
+        orbit.dist = Math.max(4, Math.min(22, pinch.dist0 * (pinch.d0 / d)));
+      }
+      return;
+    }
+
+    if (orbiting && ev.pointerId === orbiting.id) {
+      var dx = ev.clientX - orbiting.x, dy = ev.clientY - orbiting.y;
+      orbiting.x = ev.clientX; orbiting.y = ev.clientY;
+      orbit.az -= dx * 0.008;
+      orbit.el = Math.max(-1.35, Math.min(1.35, orbit.el + dy * 0.008));
+      return;
+    }
+
+    if (drag && ev.pointerId === drag.id) {
+      var j = drag.j;
+      var fe = frames[j].elements;
+      tmpAxis.set(fe[8], fe[9], fe[10]).normalize();
+      tmpOrig.set(fe[12], fe[13], fe[14]);
+
+      // Where the grabbed material point sits right now, in solver space.
+      scratchRz.makeRotationZ(theta[j]);
+      scratchM.copy(frames[j]).multiply(scratchRz);
+      var pLocal = drag.segLocal.clone().applyMatrix4(scratchM);
+
+      // Its instantaneous velocity per unit of theta_j, taken out to the screen:
+      // that is the direction the finger has to travel to drive this joint.
+      projV.copy(pLocal).sub(tmpOrig).cross(tmpAxis).multiplyScalar(-1);
+      projV.applyQuaternion(group.quaternion);
+      var pWorld = group.localToWorld(pLocal.clone());
+      var s0 = toScreen(pWorld);
+      var s1 = toScreen(pWorld.clone().add(projV.clone().multiplyScalar(0.05)));
+      var sx = (s1.x - s0.x) / 0.05, sy = (s1.y - s0.y) / 0.05;
+      var sLen2 = sx * sx + sy * sy;
+      if (sLen2 < 9) sLen2 = 9;   // axis nearly edge-on: don't let gain explode
+
+      var mx = ev.clientX - drag.lastX, my = ev.clientY - drag.lastY;
+      drag.lastX = ev.clientX; drag.lastY = ev.clientY;
+
+      var dTheta = (mx * sx + my * sy) / sLen2;
+      dTheta = Math.max(-0.3, Math.min(0.3, dTheta));
+      theta[j] += dTheta;
+      drag.vel = drag.vel * 0.6 + dTheta * 0.4;
+
+      // Sweep handoff. The piece normally tracks the finger, so the finger only
+      // ends up over a different piece when it has outrun this one -- either
+      // because the sweep is fast or because this joint has jammed. Let the old
+      // joint go with its momentum and pick up the new one: dragging across the
+      // loop then sets off a run of joints, which is most of what makes the
+      // real toy satisfying.
+      var tnow = performance.now();
+      if (tnow - drag.lastCheck > 25) {
+        drag.lastCheck = tnow;
+        var near = scanSegments(ev.clientX, ev.clientY, j);
+        // curD2 is the hysteresis: only hand over once the finger has actually
+        // left the piece it was holding, so a slow careful twist never slips.
+        if (near.i >= 0 && near.i !== j && near.curD2 > HANDOFF_LIM) {
+          omega[j] = drag.vel * 60 * tuning.sweep;
+          drag.j = near.i;
+          drag.segLocal = sampleLocal[Math.max(near.s, 2)].clone();
+          drag.vel = 0;
+          omega[near.i] = 0;
+        }
+      }
+    }
+  });
+
+  function endPointer(ev) {
+    pointers.delete(ev.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (orbiting && ev.pointerId === orbiting.id) orbiting = null;
+    if (drag && ev.pointerId === drag.id) {
+      omega[drag.j] = drag.vel * 60;   // carry the flick into momentum
+      drag = null;
+      save();
+    }
+  }
+  stage.addEventListener("pointerup", endPointer);
+  stage.addEventListener("pointercancel", endPointer);
+
+  // ---- loop ---------------------------------------------------------------
+  var recenterTarget = new THREE.Vector3();
+  var centroid = new THREE.Vector3();
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+
+  var lastT = performance.now();
+  var fpsAcc = 0, fpsCount = 0, lastHud = 0, shownErr = 0;
+
+  var elErr = document.getElementById("hErr");
+  var elFps = document.getElementById("hFps");
+  var elCon = document.getElementById("hCon");
+  var elLock = document.getElementById("lockbar");
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+
+    for (var pz = 0; pz < N; pz++) prevPos[pz].setFromMatrixPosition(frames[pz]);
+
+    // joint-space dynamics: momentum with friction, stiffened near a lock-up
+    var fr = Math.pow(tuning.friction, dt * 60) * (1 - 0.75 * lockness);
+    for (var i = 0; i < N; i++) {
+      if (drag && i === drag.j) continue;
+      if (omega[i] !== 0) {
+        theta[i] += omega[i] * dt;
+        omega[i] *= fr;
+        if (Math.abs(omega[i]) < 1e-4) omega[i] = 0;
+      }
+    }
+
+    if (collisionOn) { fk(theta); resolveCollisions(0.65); }
+    else contactCount = 0;
+
+    // project back onto the closed-loop manifold
+    var held = drag ? drag.j : -1;
+    // Collisions shove the chain off the closure manifold, and three passes
+    // can't always catch up, which shows as the loop briefly gapping open.
+    // Spend more only while something is actually touching.
+    var res = project(theta, held, tuning.lambda, held >= 0 ? tuning.stiff : 1,
+                      contactCount > 0 ? 6 : 3);
+    shownErr = res.err;
+
+    var mobility = res.minPiv === Infinity ? 1 : res.minPiv / (tuning.lambda + 0.02);
+    var targetLock = 1 - Math.max(0, Math.min(1, mobility));
+    lockness += (targetLock - lockness) * Math.min(1, dt * 8);
+
+    fk(theta);                        // sync frames with the angles just solved
+    removeRigidDrift(held);
+    updateSound(dt);
+
+    // place segments
+    for (var k = 0; k < N; k++) {
+      scratchRz.makeRotationZ(theta[k]);
+      meshes[k].matrix.copy(frames[k]).multiply(scratchRz);
+    }
+
+    // slow ambient orbit once the toy has been left alone
+    if (!reduceMotion && !drag && !orbiting && !pinch && now - lastInteract > 4000) {
+      orbit.az += dt * 0.035;
+    }
+    placeCamera();
+    renderer.render(scene, camera);
+
+    fpsAcc += dt; fpsCount++;
+    if (now - lastHud > 220) {
+      lastHud = now;
+      elFps.textContent = String(Math.round(fpsCount / Math.max(fpsAcc, 1e-6)));
+      fpsAcc = 0; fpsCount = 0;
+      var ok = shownErr < 1e-5;
+      elErr.textContent = shownErr < 1e-6 ? "0" : shownErr.toExponential(1);
+      elErr.className = ok ? "" : "bad";
+      elCon.textContent = String(contactCount);
+      elLock.style.width = (lockness * 100).toFixed(0) + "%";
+    }
+  }
+
+  function resize() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / Math.max(h, 1);
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+
+  // ---- controls -----------------------------------------------------------
+  function bindSlider(id, valId, key, fmt) {
+    var s = document.getElementById(id), v = document.getElementById(valId);
+    function sync() {
+      tuning[key] = parseFloat(s.value);
+      v.textContent = fmt(tuning[key]);
+    }
+    s.addEventListener("input", sync);
+    sync();
+  }
+  bindSlider("sStiff", "vStiff", "stiff", function (x) { return x.toFixed(0) + "×"; });
+  bindSlider("sFric", "vFric", "friction", function (x) { return x.toFixed(3); });
+  bindSlider("sLam", "vLam", "lambda", function (x) { return x.toFixed(3); });
+  bindSlider("sSweep", "vSweep", "sweep", function (x) { return x.toFixed(2) + "×"; });
+
+  var panel = document.getElementById("panel");
+  var bPanel = document.getElementById("bPanel");
+  bPanel.addEventListener("click", function () {
+    panel.hidden = !panel.hidden;
+    bPanel.setAttribute("aria-expanded", String(!panel.hidden));
+  });
+
+  var bSound = document.getElementById("bSound");
+  bSound.addEventListener("click", function () {
+    audioOn = !audioOn;
+    bSound.setAttribute("aria-pressed", String(audioOn));
+    if (audioOn) initAudio();
+  });
+
+  var bColl = document.getElementById("bColl");
+  bColl.addEventListener("click", function () {
+    collisionOn = !collisionOn;
+    bColl.setAttribute("aria-pressed", String(collisionOn));
+    bColl.textContent = collisionOn ? "켬" : "끔";
+  });
+
+  document.getElementById("bShuffle").addEventListener("click", function () {
+    var r = findClosed(N);
+    theta = r.theta.slice();
+    omega = new Array(N).fill(0);
+    prevTheta = theta.slice();
+    clickAcc = new Array(N).fill(0);
+    fk(theta);
+    recenter();
+    save();
+  });
+
+  document.getElementById("segN").addEventListener("click", function (ev) {
+    var btn = ev.target.closest("button[data-n]");
+    if (!btn) return;
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (b) {
+      b.setAttribute("aria-pressed", String(b === btn));
+    });
+    reseed(parseInt(btn.dataset.n, 10), true);
+  });
+
+  // ---- go -----------------------------------------------------------------
+  reseed(16, true);
+  resize();
+  placeCamera();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+
+<script>
+  // Installed copies run from the cache, so a reload alone will not pick up a
+  // new build; the worker takes over as soon as it activates.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {
+        // no HTTPS, or the host forbids workers: the toy still runs online
+      });
+    });
+  }
+</script>
+</body>
+</html>
