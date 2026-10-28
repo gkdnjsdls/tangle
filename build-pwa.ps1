@@ -1,4 +1,4 @@
-# Builds docs/index.html from tangle.html.
+# Builds docs/index.html from fidget.html.
 #
 # The output lives in docs/ because GitHub Pages can serve a repository's /docs
 # folder directly, which keeps the source and the deployed site in one repo.
@@ -15,11 +15,11 @@ $root = $PSScriptRoot
 # -Encoding UTF8 is not optional: Windows PowerShell otherwise reads the file in
 # the system codepage and mangles every non-ASCII character, including the ones
 # inside JS string literals, which turns into a syntax error at runtime.
-$src = Get-Content -Raw -Encoding UTF8 (Join-Path $root "tangle.html")
+$src = Get-Content -Raw -Encoding UTF8 (Join-Path $root "fidget.html")
 
-# tangle.html is: <title>/<meta>/<link>/<script src>/<style> ... then markup.
+# fidget.html is: <title>/<meta>/<link>/<script src>/<style> ... then markup.
 $cut = $src.IndexOf("</style>")
-if ($cut -lt 0) { throw "could not find </style> in tangle.html" }
+if ($cut -lt 0) { throw "could not find </style> in fidget.html" }
 $head = $src.Substring(0, $cut + 8)
 $body = $src.Substring($cut + 8)
 
@@ -37,7 +37,7 @@ $doc = @"
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="탱클">
+<meta name="apple-mobile-web-app-title" content="피젯">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">

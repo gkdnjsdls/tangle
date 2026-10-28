@@ -1,0 +1,2811 @@
+<title>피젯 토이</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  /* Layout: full-bleed WebGL stage; all chrome floats over it, anchored to safe-area corners. */
+  :root {
+    --scene-bg: #e8e6e1;
+    --scene-fog: #d9d6cf;
+    --fg: #22201d;
+    --fg-dim: #76716a;
+    --panel: rgba(255, 255, 255, 0.82);
+    --panel-line: rgba(34, 32, 29, 0.14);
+    --accent: #c4502a;
+    --track: rgba(34, 32, 29, 0.16);
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --scene-bg: #16181d;
+      --scene-fog: #0e1014;
+      --fg: #e7e5e1;
+      --fg-dim: #8a8782;
+      --panel: rgba(28, 31, 37, 0.82);
+      --panel-line: rgba(231, 229, 225, 0.16);
+      --accent: #f08a5d;
+      --track: rgba(231, 229, 225, 0.18);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --scene-bg: #16181d;
+    --scene-fog: #0e1014;
+    --fg: #e7e5e1;
+    --fg-dim: #8a8782;
+    --panel: rgba(28, 31, 37, 0.82);
+    --panel-line: rgba(231, 229, 225, 0.16);
+    --accent: #f08a5d;
+    --track: rgba(231, 229, 225, 0.18);
+    color-scheme: dark;
+  }
+
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--scene-bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #stage { position: fixed; inset: 0; touch-action: none; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+
+  #toybar {
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    left: 0;
+    padding-block: 12px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex;
+    gap: 6px;
+  }
+  #toybar button { padding: 7px 14px; }
+
+  .hud {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 48px);
+    left: 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .hud.warn { color: var(--accent); }
+
+  .corner {
+    position: fixed;
+    bottom: env(safe-area-inset-bottom, 0px);
+    right: 0;
+    padding-block: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  button {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--fg);
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 999px;
+    padding: 9px 15px;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  button:active { transform: scale(0.96); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #panel {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
+    right: max(16px, env(safe-area-inset-right, 0px));
+    left: max(16px, env(safe-area-inset-left, 0px));
+    max-width: 330px;
+    margin-left: auto;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 16px;
+    padding: 16px 16px 14px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    display: grid;
+    gap: 13px;
+  }
+  .row { display: grid; gap: 6px; min-width: 0; }
+  .row label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 10px; letter-spacing: 0.05em; color: var(--fg-dim);
+  }
+  .row label span { color: var(--fg); font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 3px; border-radius: 2px;
+    background: var(--track); outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 17px; height: 17px; border: none; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { padding: 7px 12px; font-size: 11px; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .note { font-size: 10px; line-height: 1.5; color: var(--fg-dim); margin: 0; }
+  hr { border: none; border-top: 1px solid var(--panel-line); margin: 0; }
+  @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
+</style>
+
+<div id="stage"></div>
+<div id="toybar"></div>
+<div class="hud" id="hud" hidden></div>
+<div id="panel" hidden></div>
+
+<div class="corner">
+  <button id="bTheme">자동</button>
+  <button id="bSound" aria-pressed="true">소리</button>
+  <button id="bAction" hidden></button>
+  <button id="bPanel" aria-expanded="false">튜닝</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ========================================================================
+     SHELL
+     Owns the renderer, theme, audio, haptics and chrome, and switches between
+     toys. A toy owns its own scene, camera, input handling and panel rows;
+     anything a second toy would otherwise have to duplicate lives here.
+     A toy is: { scene, camera, resize(w,h), update(dt,now), down/move/up(ev),
+                 rows() -> [DOM], hud() -> {text,warn}, action? }
+     ======================================================================== */
+
+  var stage = document.getElementById("stage");
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.appendChild(renderer.domElement);
+
+  var reduceMotion = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+
+  // ---- theme ---------------------------------------------------------------
+  var fogColor = new THREE.Color("#d9d6cf");
+
+  function readTheme() {
+    var cs = getComputedStyle(document.documentElement);
+    renderer.setClearColor(new THREE.Color(cs.getPropertyValue("--scene-bg").trim() || "#e8e6e1"), 1);
+    fogColor.set(cs.getPropertyValue("--scene-fog").trim() || "#d9d6cf");
+  }
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", readTheme);
+  }
+
+  // ---- audio and haptics ---------------------------------------------------
+  // Everything is one short noise burst through a filter: cheap, and the whole
+  // character comes from the filter and the envelope. iOS Safari has no
+  // vibration API at all, so on an iPhone the sound carries the feel alone.
+  var audio = {
+    on: true,
+    haptics: true,
+    ctx: null,
+    noise: null,
+    master: null,
+
+    init: function () {
+      if (!this.on) return;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!this.ctx) {
+        this.ctx = new AC();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.35;
+        this.master.connect(this.ctx.destination);
+        var len = Math.floor(this.ctx.sampleRate * 0.06);
+        this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+        var ch = this.noise.getChannelData(0);
+        for (var i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      }
+      if (this.ctx.state === "suspended") this.ctx.resume();
+    },
+
+    // o: { freq, amp, decay, rate:[lo,hi], q, type }
+    grain: function (o) {
+      if (!this.ctx || !this.on) return;
+      var t0 = this.ctx.currentTime;
+      var src = this.ctx.createBufferSource();
+      src.buffer = this.noise;
+      var lo = o.rate ? o.rate[0] : 0.9, hi = o.rate ? o.rate[1] : 1.1;
+      src.playbackRate.value = lo + Math.random() * (hi - lo);
+      var f = this.ctx.createBiquadFilter();
+      f.type = o.type || "bandpass";
+      f.frequency.value = o.freq;
+      f.Q.value = o.q == null ? 2.4 : o.q;
+      var g = this.ctx.createGain();
+      var dec = o.decay || 0.05;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(o.amp, t0 + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dec);
+      src.connect(f); f.connect(g); g.connect(this.master);
+      src.start(t0);
+      src.stop(t0 + dec + 0.01);
+    },
+
+    buzz: function (ms) {
+      if (!this.haptics || !navigator.vibrate) return;
+      // Without a real tap on the frame the browser refuses and logs an error
+      // for every call, so ask first rather than filling the console.
+      var ua = navigator.userActivation;
+      if (ua && !ua.hasBeenActive) return;
+      try { navigator.vibrate(ms); } catch (e) { /* refused anyway */ }
+    }
+  };
+
+  // ---- small DOM builders --------------------------------------------------
+  function mk(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function rowSlider(label, min, max, step, value, fmt, onInput) {
+    var row = mk("div", "row");
+    var lab = mk("label");
+    lab.appendChild(document.createTextNode(label));
+    var val = mk("span");
+    lab.appendChild(val);
+    var inp = mk("input");
+    inp.type = "range";
+    inp.min = min; inp.max = max; inp.step = step; inp.value = value;
+    function sync() {
+      var v = parseFloat(inp.value);
+      val.textContent = fmt(v);
+      onInput(v);
+    }
+    inp.addEventListener("input", sync);
+    row.appendChild(lab); row.appendChild(inp);
+    sync();
+    return row;
+  }
+
+  function rowSeg(label, opts, current, onPick) {
+    var row = mk("div", "row");
+    if (label) row.appendChild(mk("label", null, label));
+    var seg = mk("div", "seg");
+    opts.forEach(function (o) {
+      var b = mk("button", null, o.label);
+      b.setAttribute("aria-pressed", String(o.v === current));
+      b.addEventListener("click", function () {
+        Array.prototype.forEach.call(seg.children, function (c) {
+          c.setAttribute("aria-pressed", "false");
+        });
+        b.setAttribute("aria-pressed", "true");
+        onPick(o.v);
+      });
+      seg.appendChild(b);
+    });
+    row.appendChild(seg);
+    return row;
+  }
+
+  function rowToggle(label, value, onToggle) {
+    var row = mk("div", "row");
+    row.appendChild(mk("label", null, label));
+    var seg = mk("div", "seg");
+    var b = mk("button", null, value ? "켬" : "끔");
+    b.setAttribute("aria-pressed", String(value));
+    b.addEventListener("click", function () {
+      value = !value;
+      b.textContent = value ? "켬" : "끔";
+      b.setAttribute("aria-pressed", String(value));
+      onToggle(value);
+    });
+    seg.appendChild(b);
+    row.appendChild(seg);
+    return row;
+  }
+
+  function rowNote(text) { return mk("p", "note", text); }
+
+  function store(key, value) {
+    try {
+      if (value === undefined) return localStorage.getItem(key);
+      localStorage.setItem(key, value);
+    } catch (e) { /* private window or blocked storage */ }
+    return null;
+  }
+
+  // The camera-fit maths both toys need: the smallest distance along `dir` that
+  // still projects a point inside the frame. Fitting a bounding sphere instead
+  // would be simpler, but neither a tangle loop nor a row of keys is remotely
+  // spherical, and on a portrait phone that wastes most of the screen.
+  var fitDir = new THREE.Vector3(), fitRight = new THREE.Vector3(), fitUp = new THREE.Vector3();
+  var WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+  function fitBasis(az, el) {
+    var ce = Math.cos(el), se = Math.sin(el);
+    fitDir.set(ce * Math.sin(az), se, ce * Math.cos(az));
+    fitRight.copy(WORLD_UP).cross(fitDir).normalize();
+    fitUp.copy(fitDir).cross(fitRight);
+  }
+
+  function fitNeed(p, pad, hT, vT) {
+    var f = p.dot(fitDir);
+    var a = f + (Math.abs(p.dot(fitRight)) + pad) / hT;
+    var b = f + (Math.abs(p.dot(fitUp)) + pad) / vT;
+    return a > b ? a : b;
+  }
+
+  // Shared colour schemes. A toy asks for the colour at position t in 0..1
+  // along whatever it is colouring, so one scheme works for a 16-piece loop
+  // and a 4-key row alike. Hue is returned too, because a glowing keycap needs
+  // the hue on its own for the emissive and the light pad.
+  var PALETTES = {
+    rainbow: { label: "무지개", hsl: function (t) { return [t, 0.62, 0.55]; } },
+    pastel:  { label: "파스텔", hsl: function (t) { return [t, 0.45, 0.74]; } },
+    neon:    { label: "네온",   hsl: function (t) { return [t, 0.95, 0.56]; } },
+    ocean:   { label: "바다",   hsl: function (t) { return [0.46 + t * 0.21, 0.55, 0.42 + t * 0.26]; } },
+    candy:   { label: "캔디",   hsl: function (t) { return [0.88 + t * 0.22, 0.65, 0.70]; } },
+    mono:    { label: "단색",   hsl: function (t) { return [0.58, 0.10, 0.34 + t * 0.42]; } }
+  };
+
+  function paletteHSL(id, t) {
+    return (PALETTES[id] || PALETTES.rainbow).hsl(t);
+  }
+
+  function paletteOptions() {
+    return Object.keys(PALETTES).map(function (id) {
+      return { v: id, label: PALETTES[id].label };
+    });
+  }
+
+  var shell = {
+    renderer: renderer,
+    audio: audio,
+    paletteHSL: paletteHSL,
+    paletteOptions: paletteOptions,
+    refreshPanel: function () { rebuildPanel(); },
+    fogColor: fogColor,
+    reduceMotion: reduceMotion,
+    mk: mk,
+    rowSlider: rowSlider,
+    rowSeg: rowSeg,
+    rowToggle: rowToggle,
+    rowNote: rowNote,
+    store: store,
+    fitBasis: fitBasis,
+    fitNeed: fitNeed,
+    rect: function () { return renderer.domElement.getBoundingClientRect(); },
+    ndc: function (ev, out) {
+      var r = renderer.domElement.getBoundingClientRect();
+      out.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
+      out.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    },
+    light: function (scene) {
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x45484f, 0.72));
+      var key = new THREE.DirectionalLight(0xffffff, 0.78);
+      key.position.set(4, 6, 5);
+      scene.add(key);
+      var rim = new THREE.DirectionalLight(0xbcd2ff, 0.4);
+      rim.position.set(-5, -2, -4);
+      scene.add(rim);
+    }
+  };
+
+  /* ========================================================================
+     TOY: 탱클
+     ======================================================================== */
+
+  function makeTangle(shell) {
+    var R = 1.0;          // elbow radius
+    var TUBE = 0.36;      // tube radius
+    var N = 16;           // segment count (= joint count)
+    var MAXN = 24;
+
+    // Fixed 90-degree bend transform B: entry frame at origin facing +Z,
+    // exit at (R,0,R) facing +X.  B = Translate(R,0,R) * RotY(90deg)
+    var B = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+    B.setPosition(R, 0, R);
+
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
+    var group = new THREE.Group();
+    scene.add(group);
+    shell.light(scene);
+    scene.fog = new THREE.Fog(shell.fogColor.clone(), 11, 26);
+
+    // Elbow geometry, re-based so the piece enters at the origin heading +Z.
+    // Default TorusGeometry runs (R,0,0) -> (0,R,0) in the XY plane; this
+    // rotation maps X->-X, Y->Z, Z->Y, then shifts the arc centre to (R,0,0).
+    var baseGeo = new THREE.TorusGeometry(R, TUBE, 18, 30, Math.PI / 2);
+    baseGeo.applyMatrix4(new THREE.Matrix4().set(
+      -1, 0, 0, R,
+       0, 0, 1, 0,
+       0, 1, 0, 0,
+       0, 0, 0, 1
+    ));
+
+    var theta = [], prevTheta = [], omega = [], frames = [], prevPos = [], meshes = [];
+    var lockness = 0;
+    var anchor = new THREE.Matrix4();
+    var tuning = { stiff: 60, friction: 0.93, lambda: 0.02, sweep: 1.2 };
+    var paletteId = shell.store("tangle-palette") || "rainbow";
+
+    // Named feels, so the four sliders are for fine-tuning rather than the
+    // only way in.
+    var FEELS = {
+      normal: { label: "기본",   stiff: 60,  friction: 0.93,  sweep: 1.2 },
+      soft:   { label: "부드럽게", stiff: 24,  friction: 0.965, sweep: 1.8 },
+      tight:  { label: "빡빡하게", stiff: 160, friction: 0.86,  sweep: 0.7 },
+      loose:  { label: "헐렁하게", stiff: 40,  friction: 0.985, sweep: 2.3 }
+    };
+
+    var scratchRz = new THREE.Matrix4();
+    var scratchM = new THREE.Matrix4();
+    var scratchQ = new THREE.Quaternion();
+    var centroid = new THREE.Vector3();
+
+    function buildChain(n) {
+      meshes.forEach(function (m) { group.remove(m); m.material.dispose(); });
+      meshes = []; frames = []; prevPos = [];
+      N = n;
+      for (var i = 0; i < N; i++) {
+        frames.push(new THREE.Matrix4());
+        prevPos.push(new THREE.Vector3());
+        var c = shell.paletteHSL(paletteId, i / N);
+        var mesh = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({
+          color: new THREE.Color().setHSL(c[0], c[1], c[2]),
+          roughness: 0.34, metalness: 0.02
+        }));
+        mesh.matrixAutoUpdate = false;
+        mesh.userData.index = i;
+        group.add(mesh);
+        meshes.push(mesh);
+      }
+    }
+
+    // ---- forward kinematics ------------------------------------------------
+    // F_0 = I;  F_{i+1} = F_i * RotZ(theta_i) * B.  Closure wants F_N = I.
+    var FN = new THREE.Matrix4();
+    function fk(th) {
+      FN.identity();
+      for (var i = 0; i < N; i++) {
+        frames[i].copy(FN);
+        scratchRz.makeRotationZ(th[i]);
+        FN.multiply(scratchRz).multiply(B);
+      }
+      return FN;
+    }
+
+    // Closure error as a 6-vector: translation of F_N, then its rotation as an
+    // axis*angle vector. Both are zero exactly when the loop closes.
+    var err = new Float64Array(6);
+    function closureError(m) {
+      var e = m.elements;
+      err[0] = e[12]; err[1] = e[13]; err[2] = e[14];
+      scratchQ.setFromRotationMatrix(m);
+      var w = scratchQ.w, x = scratchQ.x, y = scratchQ.y, z = scratchQ.z;
+      if (w < 0) { w = -w; x = -x; y = -y; z = -z; }
+      if (w > 1) w = 1;
+      var s = Math.sqrt(1 - w * w);
+      if (s < 1e-8) { err[3] = 2 * x; err[4] = 2 * y; err[5] = 2 * z; }
+      else {
+        var k = 2 * Math.acos(w) / s;
+        err[3] = k * x; err[4] = k * y; err[5] = k * z;
+      }
+      var n = 0;
+      for (var i = 0; i < 6; i++) n += err[i] * err[i];
+      return Math.sqrt(n);
+    }
+
+    // 6x6 solve with partial pivoting; also reports the smallest pivot, which
+    // is our cheap read on how close the linkage is to locking up.
+    function solve6(A, b, out) {
+      var n = 6, M = [], r, c, k;
+      for (r = 0; r < n; r++) M.push([A[r][0], A[r][1], A[r][2], A[r][3], A[r][4], A[r][5], b[r]]);
+      var minPiv = Infinity;
+      for (c = 0; c < n; c++) {
+        var piv = c;
+        for (r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+        var pv = Math.abs(M[piv][c]);
+        if (pv < minPiv) minPiv = pv;
+        if (pv < 1e-13) return -1;
+        var t = M[c]; M[c] = M[piv]; M[piv] = t;
+        for (r = c + 1; r < n; r++) {
+          var f = M[r][c] / M[c][c];
+          if (f === 0) continue;
+          for (k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+        }
+      }
+      for (r = n - 1; r >= 0; r--) {
+        var sum = M[r][n];
+        for (k = r + 1; k < n; k++) sum -= M[r][k] * out[k];
+        out[r] = sum / M[r][r];
+      }
+      return minPiv;
+    }
+
+    // ---- closure projection ------------------------------------------------
+    // One damped-least-squares Newton step distributes the closure correction
+    // across the joints. Weight W makes a joint resist correction: the joint
+    // the finger is on gets a big weight, so the rest of the loop gives way.
+    var A6 = [], y6 = new Float64Array(6), rhs = new Float64Array(6);
+    for (var _i = 0; _i < 6; _i++) A6.push(new Float64Array(6));
+    var invW = new Float64Array(MAXN);
+    var dTh = new Float64Array(MAXN);
+    var J = [];
+    for (var _j = 0; _j < MAXN; _j++) J.push(new Float64Array(6));
+
+    var tmpAxis = new THREE.Vector3(), tmpOrig = new THREE.Vector3();
+    var tmpEnd = new THREE.Vector3(), tmpCross = new THREE.Vector3();
+
+    function projectOnce(th, heldIdx, lambda, heldWeight) {
+      var m = fk(th);
+      var en = closureError(m);
+      if (en < 1e-10) return { err: en, minPiv: Infinity };
+      tmpEnd.setFromMatrixPosition(m);
+
+      for (var i = 0; i < N; i++) {
+        var fe = frames[i].elements;
+        tmpAxis.set(fe[8], fe[9], fe[10]).normalize();      // local +Z in world
+        tmpOrig.set(fe[12], fe[13], fe[14]);
+        tmpCross.copy(tmpEnd).sub(tmpOrig).cross(tmpAxis).multiplyScalar(-1);
+        var Ji = J[i];
+        Ji[0] = tmpCross.x; Ji[1] = tmpCross.y; Ji[2] = tmpCross.z;
+        Ji[3] = tmpAxis.x; Ji[4] = tmpAxis.y; Ji[5] = tmpAxis.z;
+        invW[i] = 1 / (i === heldIdx ? heldWeight : 1);
+      }
+
+      for (var r = 0; r < 6; r++) {           // A = J W^-1 J^T + lambda I
+        for (var c = r; c < 6; c++) {
+          var s = 0;
+          for (var q = 0; q < N; q++) s += invW[q] * J[q][r] * J[q][c];
+          if (r === c) s += lambda;
+          A6[r][c] = s; A6[c][r] = s;
+        }
+        rhs[r] = -err[r];
+      }
+
+      var minPiv = solve6(A6, rhs, y6);
+      if (minPiv < 0) return { err: en, minPiv: 0 };
+
+      var maxStep = 0;                         // dtheta = W^-1 J^T y, clamped
+      for (var i2 = 0; i2 < N; i2++) {
+        var acc = 0;
+        for (var rr = 0; rr < 6; rr++) acc += J[i2][rr] * y6[rr];
+        dTh[i2] = invW[i2] * acc;
+        var a = Math.abs(dTh[i2]);
+        if (a > maxStep) maxStep = a;
+      }
+      var scale = maxStep > 0.35 ? 0.35 / maxStep : 1;
+      for (var i3 = 0; i3 < N; i3++) th[i3] += dTh[i3] * scale;
+      return { err: en, minPiv: minPiv };
+    }
+
+    function project(th, heldIdx, lambda, heldWeight, iters) {
+      var res = { err: 0, minPiv: Infinity };
+      for (var k = 0; k < iters; k++) {
+        res = projectOnce(th, heldIdx, lambda, heldWeight);
+        if (res.err < 1e-10) break;
+      }
+      return res;
+    }
+
+    // Whether a given N closes at all is exactly what we wanted to find out,
+    // so this reports honestly instead of pretending.
+    function findClosed(n) {
+      var best = null, bestErr = Infinity;
+      for (var attempt = 0; attempt < 120; attempt++) {
+        var th = new Array(n);
+        for (var i = 0; i < n; i++) th[i] = Math.random() * Math.PI * 2;
+        var saveN = N; N = n;
+        var e = Infinity;
+        for (var it = 0; it < 260; it++) {
+          e = projectOnce(th, -1, 0.012, 1).err;
+          if (e < 1e-9) break;
+        }
+        N = saveN;
+        if (e < bestErr) { bestErr = e; best = th; }
+        if (bestErr < 1e-8) break;
+      }
+      return { theta: best, err: bestErr };
+    }
+
+    function reseed(n, useStored) {
+      buildChain(n);
+      var stored = null;
+      if (useStored) {
+        var raw = shell.store("tangle-v0-" + n);
+        if (raw) {
+          try {
+            var parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length === n) stored = parsed;
+          } catch (e) { /* corrupt entry: start fresh */ }
+        }
+      }
+      if (stored) {
+        theta = stored.slice();
+        project(theta, -1, 0.01, 1, 60);
+      } else {
+        theta = findClosed(n).theta.slice();
+      }
+      omega = new Array(n).fill(0);
+      prevTheta = theta.slice();
+      clickAcc = new Array(n).fill(0);
+      fk(theta);
+      recenter();
+      snapFit();
+    }
+
+    function save() {
+      shell.store("tangle-v0-" + N, JSON.stringify(
+        theta.map(function (t) { return Math.round(t * 1e4) / 1e4; })
+      ));
+    }
+
+    // ---- rigid drift removal -----------------------------------------------
+    // The closure solver spreads its correction over every joint, so between
+    // frames the loop picks up a net translation and rotation. That component
+    // is bookkeeping, not motion: nothing about the shape changed because of
+    // it. Measure it against the previous frame and undo it on the display, so
+    // the loop deforms in place instead of swimming around the screen.
+    var A3 = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    var b3 = new Float64Array(3), om3 = new Float64Array(3);
+    var driftW = new Float64Array(MAXN);
+    var cPrev = new THREE.Vector3(), cCur = new THREE.Vector3();
+    var qv = new THREE.Vector3(), pv = new THREE.Vector3();
+    var dv = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+    var driftQ = new THREE.Quaternion();
+    var driftM = new THREE.Matrix4(), driftT = new THREE.Matrix4();
+
+    function solve3(A, b, out) {
+      var m = [
+        [A[0][0], A[0][1], A[0][2], b[0]],
+        [A[1][0], A[1][1], A[1][2], b[1]],
+        [A[2][0], A[2][1], A[2][2], b[2]]
+      ];
+      var r, c, k;
+      for (c = 0; c < 3; c++) {
+        var p = c;
+        for (r = c + 1; r < 3; r++) if (Math.abs(m[r][c]) > Math.abs(m[p][c])) p = r;
+        if (Math.abs(m[p][c]) < 1e-12) return false;
+        var t = m[c]; m[c] = m[p]; m[p] = t;
+        for (r = c + 1; r < 3; r++) {
+          var f = m[r][c] / m[c][c];
+          for (k = c; k < 4; k++) m[r][k] -= f * m[c][k];
+        }
+      }
+      for (r = 2; r >= 0; r--) {
+        var s = m[r][3];
+        for (k = r + 1; k < 3; k++) s -= m[r][k] * out[k];
+        out[r] = s / m[r][r];
+      }
+      return true;
+    }
+
+    function recenter() {
+      centroid.set(0, 0, 0);
+      for (var k = 0; k < N; k++) {
+        tmp2.setFromMatrixPosition(frames[k]);
+        centroid.add(tmp2);
+        prevPos[k].copy(tmp2);
+      }
+      centroid.multiplyScalar(1 / N);
+      anchor.identity();
+      anchor.setPosition(-centroid.x, -centroid.y, -centroid.z);
+      anchor.decompose(group.position, group.quaternion, group.scale);
+    }
+
+    function removeRigidDrift(heldIdx) {
+      var k, w, wsum = 0, half = N / 2;
+      cPrev.set(0, 0, 0); cCur.set(0, 0, 0);
+      for (k = 0; k < N; k++) {
+        w = 1;
+        if (heldIdx >= 0) {
+          var d = Math.abs(k - heldIdx);
+          if (d > half) d = N - d;
+          w = 0.2 + 1.8 * (d / half);   // pin the far side, let the grabbed side move
+        }
+        driftW[k] = w; wsum += w;
+        cPrev.addScaledVector(prevPos[k], w);
+        tmp2.setFromMatrixPosition(frames[k]);
+        cCur.addScaledVector(tmp2, w);
+      }
+      cPrev.multiplyScalar(1 / wsum);
+      cCur.multiplyScalar(1 / wsum);
+
+      // Small-angle fit: minimise sum w |omega x q - (p - q)|^2 over omega.
+      for (var r = 0; r < 3; r++) { b3[r] = 0; A3[r][0] = A3[r][1] = A3[r][2] = 0; }
+      for (k = 0; k < N; k++) {
+        w = driftW[k];
+        qv.setFromMatrixPosition(frames[k]).sub(cCur);
+        pv.copy(prevPos[k]).sub(cPrev);
+        dv.copy(pv).sub(qv);
+        var q2 = qv.lengthSq();
+        A3[0][0] += w * (q2 - qv.x * qv.x);
+        A3[0][1] -= w * qv.x * qv.y;
+        A3[0][2] -= w * qv.x * qv.z;
+        A3[1][0] -= w * qv.y * qv.x;
+        A3[1][1] += w * (q2 - qv.y * qv.y);
+        A3[1][2] -= w * qv.y * qv.z;
+        A3[2][0] -= w * qv.z * qv.x;
+        A3[2][1] -= w * qv.z * qv.y;
+        A3[2][2] += w * (q2 - qv.z * qv.z);
+        tmp2.copy(qv).cross(dv);
+        b3[0] += w * tmp2.x; b3[1] += w * tmp2.y; b3[2] += w * tmp2.z;
+      }
+      A3[0][0] += 1e-4; A3[1][1] += 1e-4; A3[2][2] += 1e-4;
+
+      var ok = solve3(A3, b3, om3);
+      var ax = ok ? om3[0] : 0, ay = ok ? om3[1] : 0, az = ok ? om3[2] : 0;
+      var ang = Math.sqrt(ax * ax + ay * ay + az * az);
+      if (ang > 0.3) { var sc = 0.3 / ang; ax *= sc; ay *= sc; az *= sc; ang = 0.3; }
+      if (ang > 1e-9) {
+        tmp2.set(ax / ang, ay / ang, az / ang);
+        driftQ.setFromAxisAngle(tmp2, ang);
+      } else driftQ.identity();
+
+      // L = T(cPrev) * R(drift) * T(-cCur), so that L maps current onto previous
+      driftM.makeRotationFromQuaternion(driftQ);
+      driftT.makeTranslation(-cCur.x, -cCur.y, -cCur.z);
+      driftM.multiply(driftT);
+      driftT.makeTranslation(cPrev.x, cPrev.y, cPrev.z);
+      driftM.premultiply(driftT);
+      anchor.multiply(driftM);
+
+      // While idle, ease back toward centre so a long session of one-sided
+      // twisting can't gradually walk the toy off the edge.
+      if (heldIdx < 0) {
+        tmp2.set(0, 0, 0);
+        for (k = 0; k < N; k++) { qv.setFromMatrixPosition(frames[k]); tmp2.add(qv); }
+        tmp2.multiplyScalar(1 / N).applyMatrix4(anchor);
+        driftT.makeTranslation(-tmp2.x * 0.04, -tmp2.y * 0.04, -tmp2.z * 0.04);
+        anchor.premultiply(driftT);
+      }
+      anchor.decompose(group.position, group.quaternion, group.scale);
+    }
+
+    // ---- self-collision ----------------------------------------------------
+    // A closed loop folds onto itself constantly, so segments passing through
+    // each other is the most visible break with the real toy. Each elbow is a
+    // chain of capsules along its centreline; overlapping capsules are pushed
+    // apart in joint space, and the closure projection afterwards absorbs it.
+    var SAMPLES = 5;
+    var collisionOn = true;
+    var contactCount = 0;
+    var sampleLocal = [];
+    for (var sI = 0; sI < SAMPLES; sI++) {
+      var st = (Math.PI / 2) * (sI / (SAMPLES - 1));
+      sampleLocal.push(new THREE.Vector3(R - R * Math.cos(st), 0, R * Math.sin(st)));
+    }
+    var samplePts = [];
+    for (var sa0 = 0; sa0 < MAXN; sa0++) {
+      var rowPts = [];
+      for (var sb0 = 0; sb0 < SAMPLES; sb0++) rowPts.push(new THREE.Vector3());
+      samplePts.push(rowPts);
+    }
+    var segCenter = [];
+    for (var sc0 = 0; sc0 < MAXN; sc0++) segCenter.push(new THREE.Vector3());
+    var BROAD = R * 1.5 + TUBE * 2;
+
+    var cd1 = new THREE.Vector3(), cd2 = new THREE.Vector3(), cr = new THREE.Vector3();
+    function closestSeg(p1, q1, p2, q2, outA, outB) {
+      cd1.copy(q1).sub(p1);
+      cd2.copy(q2).sub(p2);
+      cr.copy(p1).sub(p2);
+      var aa = cd1.lengthSq(), ee = cd2.lengthSq(), ff = cd2.dot(cr);
+      var s = 0, t = 0, EPS = 1e-9;
+      if (aa <= EPS && ee <= EPS) { s = 0; t = 0; }
+      else if (aa <= EPS) { s = 0; t = Math.min(1, Math.max(0, ff / ee)); }
+      else {
+        var cc = cd1.dot(cr);
+        if (ee <= EPS) { t = 0; s = Math.min(1, Math.max(0, -cc / aa)); }
+        else {
+          var bb = cd1.dot(cd2);
+          var denom = aa * ee - bb * bb;
+          s = denom > EPS ? Math.min(1, Math.max(0, (bb * ff - cc * ee) / denom)) : 0;
+          t = (bb * s + ff) / ee;
+          if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -cc / aa)); }
+          else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (bb - cc) / aa)); }
+        }
+      }
+      outA.copy(cd1).multiplyScalar(s).add(p1);
+      outB.copy(cd2).multiplyScalar(t).add(p2);
+    }
+
+    var cpA = new THREE.Vector3(), cpB = new THREE.Vector3(), nrm = new THREE.Vector3();
+    var axisK = new THREE.Vector3(), origK = new THREE.Vector3(), velK = new THREE.Vector3();
+    var gradBuf = new Float64Array(MAXN), collPush = new Float64Array(MAXN);
+
+    function resolveCollisions(strength) {
+      var i, j, k, s;
+      for (i = 0; i < N; i++) {
+        scratchRz.makeRotationZ(theta[i]);
+        scratchM.copy(frames[i]).multiply(scratchRz);
+        segCenter[i].set(0, 0, 0);
+        for (s = 0; s < SAMPLES; s++) {
+          samplePts[i][s].copy(sampleLocal[s]).applyMatrix4(scratchM);
+          segCenter[i].add(samplePts[i][s]);
+        }
+        segCenter[i].multiplyScalar(1 / SAMPLES);
+        collPush[i] = 0;
+      }
+
+      var minDist = 2 * TUBE, half = N / 2, found = 0;
+      for (i = 0; i < N; i++) {
+        for (j = i + 2; j < N; j++) {
+          var ld = j - i; if (ld > half) ld = N - ld;
+          if (ld < 2) continue;
+          if (segCenter[i].distanceToSquared(segCenter[j]) > BROAD * BROAD) continue;
+          for (var ca = 0; ca < SAMPLES - 1; ca++) {
+            for (var cb = 0; cb < SAMPLES - 1; cb++) {
+              closestSeg(samplePts[i][ca], samplePts[i][ca + 1],
+                         samplePts[j][cb], samplePts[j][cb + 1], cpA, cpB);
+              nrm.copy(cpA).sub(cpB);
+              var dist = nrm.length();
+              if (dist >= minDist || dist < 1e-9) continue;
+              nrm.multiplyScalar(1 / dist);
+              found++;
+              if (found > 48) break;
+
+              // d(separation along n)/d(theta_k); joint k only moves a point on
+              // segment m when k <= m, since the chain is built from seg 0.
+              var gg = 0;
+              for (k = 0; k < N; k++) {
+                var g = 0;
+                var fe2 = frames[k].elements;
+                axisK.set(fe2[8], fe2[9], fe2[10]);
+                origK.set(fe2[12], fe2[13], fe2[14]);
+                if (k <= i) {
+                  velK.copy(cpA).sub(origK).cross(axisK).multiplyScalar(-1);
+                  g += nrm.dot(velK);
+                }
+                if (k <= j) {
+                  velK.copy(cpB).sub(origK).cross(axisK).multiplyScalar(-1);
+                  g -= nrm.dot(velK);
+                }
+                gradBuf[k] = g; gg += g * g;
+              }
+              if (gg < 1e-9) continue;
+              var step = (minDist - dist) * strength / gg;
+              for (k = 0; k < N; k++) collPush[k] += gradBuf[k] * step;
+            }
+            if (found > 48) break;
+          }
+        }
+      }
+
+      var maxP = 0;
+      for (k = 0; k < N; k++) { var ab = Math.abs(collPush[k]); if (ab > maxP) maxP = ab; }
+      var sc = maxP > 0.25 ? 0.25 / maxP : 1;
+      for (k = 0; k < N; k++) theta[k] += collPush[k] * sc;
+      contactCount = found;
+    }
+
+    // ---- sound -------------------------------------------------------------
+    // One grain per fixed slice of joint rotation, pitched and weighted by how
+    // fast that joint is turning: slow gives separate ticks, fast runs together.
+    var clickAcc = [], clicksThisFrame = 0, prevContacts = 0, knockCool = 0;
+    var CLICK_STEP = Math.PI / 14;
+
+    function updateSound(dt) {
+      clicksThisFrame = 0;
+      knockCool -= dt;
+      if (shell.audio.ctx && shell.audio.on) {
+        for (var k = 0; k < N; k++) {
+          var d = Math.abs(theta[k] - prevTheta[k]);
+          var speed = d / Math.max(dt, 1e-4);
+          // the closure solver nudges every joint a little every frame; only
+          // joints actually turning should be audible
+          if (speed > 0.4) clickAcc[k] += d;
+          while (clickAcc[k] > CLICK_STEP && clicksThisFrame < 3) {
+            clickAcc[k] -= CLICK_STEP;
+            clicksThisFrame++;
+            var hot = Math.min(1, speed / 6);
+            shell.audio.grain({
+              freq: 900 + hot * 2200 + Math.random() * 300,
+              amp: Math.min(0.25, 0.03 + speed * 0.03),
+              decay: 0.045, rate: [0.8, 1.4]
+            });
+          }
+          if (clickAcc[k] > CLICK_STEP * 3) clickAcc[k] = CLICK_STEP * 3;
+        }
+        if (contactCount > prevContacts + 1 && knockCool <= 0) {
+          shell.audio.grain({ freq: 190, amp: 0.16, decay: 0.09, rate: [0.4, 0.6] });
+          knockCool = 0.12;
+        }
+      }
+      prevContacts = contactCount;
+      for (var p = 0; p < N; p++) prevTheta[p] = theta[p];
+    }
+
+    // ---- camera ------------------------------------------------------------
+    var orbit = { az: 0.7, el: 0.45, zoom: 1 };
+    var fitDist = 10, fitP = new THREE.Vector3();
+
+    function computeFit() {
+      shell.fitBasis(orbit.az, orbit.el);
+      var vT = Math.tan(camera.fov * Math.PI / 360);
+      var hT = vT * camera.aspect;
+      var need = 0, i, s;
+      for (i = 0; i < N; i++) {
+        scratchRz.makeRotationZ(theta[i]);
+        scratchM.copy(frames[i]).multiply(scratchRz).premultiply(anchor);
+        for (s = 0; s < SAMPLES; s++) {
+          fitP.copy(sampleLocal[s]).applyMatrix4(scratchM);
+          var n2 = shell.fitNeed(fitP, TUBE, hT, vT);
+          if (n2 > need) need = n2;
+        }
+      }
+      return Math.max(need * 1.10, 3);
+    }
+
+    function snapFit() { fitDist = computeFit(); }
+
+    function placeCamera() {
+      var d = fitDist * orbit.zoom;
+      scene.fog.color.copy(shell.fogColor);
+      scene.fog.near = d * 0.9;
+      scene.fog.far = d * 2.0;
+      var ce = Math.cos(orbit.el), se = Math.sin(orbit.el);
+      camera.position.set(d * ce * Math.sin(orbit.az), d * se, d * ce * Math.cos(orbit.az));
+      camera.lookAt(0, 0, 0);
+    }
+
+    // ---- input -------------------------------------------------------------
+    var raycaster = new THREE.Raycaster();
+    var ndc = new THREE.Vector2();
+    var pointers = new Map();
+    var drag = null, orbiting = null, pinch = null;
+    var lastInteract = performance.now();
+    var projV = new THREE.Vector3();
+
+    function toScreen(v) {
+      var p = v.clone().project(camera);
+      var r = shell.rect();
+      return { x: (p.x * 0.5 + 0.5) * r.width, y: (-p.y * 0.5 + 0.5) * r.height };
+    }
+
+    // Which segment is under the finger, in screen space rather than by
+    // raycast: during a fast sweep the finger regularly slips off the tube
+    // between two pieces, and a raycast would simply stall there.
+    var HANDOFF_PX = 55, HANDOFF_LIM = HANDOFF_PX * HANDOFF_PX;
+    var sweepP = new THREE.Vector3();
+    var scan = { i: -1, s: 2, curD2: Infinity };
+
+    function scanSegments(cx, cy, curIdx) {
+      var r = shell.rect();
+      var best = -1, bestS = 2, bestZ = Infinity, curD2 = Infinity;
+      for (var i = 0; i < N; i++) {
+        scratchRz.makeRotationZ(theta[i]);
+        scratchM.copy(frames[i]).multiply(scratchRz);
+        for (var s = 1; s < SAMPLES - 1; s++) {
+          sweepP.copy(sampleLocal[s]).applyMatrix4(scratchM);
+          group.localToWorld(sweepP);
+          sweepP.project(camera);
+          if (sweepP.z > 1) continue;            // behind the camera
+          var px = (sweepP.x * 0.5 + 0.5) * r.width + r.left;
+          var py = (-sweepP.y * 0.5 + 0.5) * r.height + r.top;
+          var dd = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+          if (i === curIdx && dd < curD2) curD2 = dd;
+          // among everything under the finger, take the piece nearest the camera
+          if (dd < HANDOFF_LIM && sweepP.z < bestZ) { bestZ = sweepP.z; best = i; bestS = s; }
+        }
+      }
+      scan.i = best; scan.s = bestS; scan.curD2 = curD2;
+      return scan;
+    }
+
+    function down(ev) {
+      lastInteract = performance.now();
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+      if (pointers.size === 2) {
+        var pts = Array.from(pointers.values());
+        pinch = { d0: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), zoom0: orbit.zoom };
+        drag = null; orbiting = null;
+        return;
+      }
+
+      shell.ndc(ev, ndc);
+      scene.updateMatrixWorld(true);
+      raycaster.setFromCamera(ndc, camera);
+      var hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length) {
+        var j = hits[0].object.userData.index;
+        var local = group.worldToLocal(hits[0].point.clone());
+        // Keep the grab in the segment's own coordinates, so the finger stays
+        // on the same material point however the chain shifts underneath it.
+        scratchRz.makeRotationZ(theta[j]);
+        scratchM.copy(frames[j]).multiply(scratchRz).invert();
+        drag = {
+          id: ev.pointerId, j: j,
+          segLocal: local.applyMatrix4(scratchM),
+          lastX: ev.clientX, lastY: ev.clientY, vel: 0, lastCheck: 0
+        };
+        omega[j] = 0;
+      } else {
+        orbiting = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
+      }
+    }
+
+    function move(ev) {
+      if (!pointers.has(ev.pointerId)) return;
+      lastInteract = performance.now();
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+      if (pinch && pointers.size === 2) {
+        var pts = Array.from(pointers.values());
+        var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (pinch.d0 > 0) orbit.zoom = Math.max(0.4, Math.min(2.5, pinch.zoom0 * (pinch.d0 / d)));
+        return;
+      }
+
+      if (orbiting && ev.pointerId === orbiting.id) {
+        var dx = ev.clientX - orbiting.x, dy = ev.clientY - orbiting.y;
+        orbiting.x = ev.clientX; orbiting.y = ev.clientY;
+        orbit.az -= dx * 0.008;
+        orbit.el = Math.max(-1.35, Math.min(1.35, orbit.el + dy * 0.008));
+        return;
+      }
+
+      if (drag && ev.pointerId === drag.id) {
+        var j = drag.j;
+        var fe = frames[j].elements;
+        tmpAxis.set(fe[8], fe[9], fe[10]).normalize();
+        tmpOrig.set(fe[12], fe[13], fe[14]);
+
+        scratchRz.makeRotationZ(theta[j]);
+        scratchM.copy(frames[j]).multiply(scratchRz);
+        var pLocal = drag.segLocal.clone().applyMatrix4(scratchM);
+
+        // Instantaneous velocity of the grabbed point per unit of theta_j,
+        // taken out to the screen: the direction the finger has to travel.
+        projV.copy(pLocal).sub(tmpOrig).cross(tmpAxis).multiplyScalar(-1);
+        projV.applyQuaternion(group.quaternion);
+        var pWorld = group.localToWorld(pLocal.clone());
+        var s0 = toScreen(pWorld);
+        var s1 = toScreen(pWorld.clone().add(projV.clone().multiplyScalar(0.05)));
+        var sx = (s1.x - s0.x) / 0.05, sy = (s1.y - s0.y) / 0.05;
+        var sLen2 = sx * sx + sy * sy;
+        if (sLen2 < 9) sLen2 = 9;   // axis nearly edge-on: don't let gain explode
+
+        var mx = ev.clientX - drag.lastX, my = ev.clientY - drag.lastY;
+        drag.lastX = ev.clientX; drag.lastY = ev.clientY;
+
+        var dTheta = Math.max(-0.3, Math.min(0.3, (mx * sx + my * sy) / sLen2));
+        theta[j] += dTheta;
+        drag.vel = drag.vel * 0.6 + dTheta * 0.4;
+
+        // Sweep handoff. The piece normally tracks the finger, so the finger
+        // only ends up over a different piece when it has outrun this one --
+        // because the sweep is fast, or because this joint has jammed. Let the
+        // old joint go with its momentum and pick up the new one.
+        var tnow = performance.now();
+        if (tnow - drag.lastCheck > 25) {
+          drag.lastCheck = tnow;
+          var near = scanSegments(ev.clientX, ev.clientY, j);
+          // curD2 is the hysteresis: hand over only once the finger has really
+          // left the piece it held, so a slow careful twist never slips.
+          if (near.i >= 0 && near.i !== j && near.curD2 > HANDOFF_LIM) {
+            omega[j] = drag.vel * 60 * tuning.sweep;
+            drag.j = near.i;
+            drag.segLocal = sampleLocal[Math.max(near.s, 2)].clone();
+            drag.vel = 0;
+            omega[near.i] = 0;
+          }
+        }
+      }
+    }
+
+    function up(ev) {
+      pointers.delete(ev.pointerId);
+      if (pointers.size < 2) pinch = null;
+      if (orbiting && ev.pointerId === orbiting.id) orbiting = null;
+      if (drag && ev.pointerId === drag.id) {
+        omega[drag.j] = drag.vel * 60;   // carry the flick into momentum
+        drag = null;
+        save();
+      }
+    }
+
+    // ---- frame -------------------------------------------------------------
+    var shownErr = 0;
+
+    function update(dt, now) {
+      for (var pz = 0; pz < N; pz++) prevPos[pz].setFromMatrixPosition(frames[pz]);
+
+      var fr = Math.pow(tuning.friction, dt * 60) * (1 - 0.75 * lockness);
+      for (var i = 0; i < N; i++) {
+        if (drag && i === drag.j) continue;
+        if (omega[i] !== 0) {
+          theta[i] += omega[i] * dt;
+          omega[i] *= fr;
+          if (Math.abs(omega[i]) < 1e-4) omega[i] = 0;
+        }
+      }
+
+      if (collisionOn) { fk(theta); resolveCollisions(0.65); }
+      else contactCount = 0;
+
+      var held = drag ? drag.j : -1;
+      // Collisions shove the chain off the closure manifold and three passes
+      // can't always catch up, which shows as the loop briefly gapping open.
+      // Spend more only while something is actually touching.
+      var res = project(theta, held, tuning.lambda, held >= 0 ? tuning.stiff : 1,
+                        contactCount > 0 ? 6 : 3);
+      shownErr = res.err;
+
+      var mobility = res.minPiv === Infinity ? 1 : res.minPiv / (tuning.lambda + 0.02);
+      lockness += ((1 - Math.max(0, Math.min(1, mobility))) - lockness) * Math.min(1, dt * 8);
+
+      fk(theta);                        // sync frames with the angles just solved
+      removeRigidDrift(held);
+      updateSound(dt);
+
+      for (var k = 0; k < N; k++) {
+        scratchRz.makeRotationZ(theta[k]);
+        meshes[k].matrix.copy(frames[k]).multiply(scratchRz);
+      }
+
+      // Expand only. Following the fit in both directions made the view breathe
+      // in and out the whole time the shape was settling, which is worse than a
+      // slightly loose frame. A closed loop's extent is bounded, so this
+      // converges and then holds still.
+      if (!drag && !orbiting && !pinch) {
+        var need = computeFit();
+        if (need > fitDist) fitDist += (need - fitDist) * Math.min(1, dt * 2.5);
+      }
+      if (!shell.reduceMotion && !drag && !orbiting && !pinch && now - lastInteract > 4000) {
+        orbit.az += dt * 0.035;
+      }
+      placeCamera();
+    }
+
+    function resize(w, h) {
+      camera.aspect = w / Math.max(h, 1);
+      camera.updateProjectionMatrix();
+      snapFit();          // a rotated phone changes which field of view is narrower
+      placeCamera();
+    }
+
+    function applyPalette() {
+      for (var i = 0; i < meshes.length; i++) {
+        var c = shell.paletteHSL(paletteId, i / meshes.length);
+        meshes[i].material.color.setHSL(c[0], c[1], c[2]);
+      }
+    }
+
+    function rows() {
+      return [
+        shell.rowSeg("손맛",
+          Object.keys(FEELS).map(function (id) { return { v: id, label: FEELS[id].label }; }),
+          null,
+          function (id) {
+            var f = FEELS[id];
+            tuning.stiff = f.stiff;
+            tuning.friction = f.friction;
+            tuning.sweep = f.sweep;
+            shell.refreshPanel();     // the sliders below have to follow
+          }),
+        shell.rowSlider("잡은 관절 뻑뻑함", 1, 300, 1, tuning.stiff,
+          function (x) { return x.toFixed(0) + "×"; },
+          function (v) { tuning.stiff = v; }),
+        shell.rowSlider("관절 마찰", 0.80, 0.995, 0.001, tuning.friction,
+          function (x) { return x.toFixed(3); },
+          function (v) { tuning.friction = v; }),
+        shell.rowSlider("감쇠 λ", 0.001, 0.2, 0.001, tuning.lambda,
+          function (x) { return x.toFixed(3); },
+          function (v) { tuning.lambda = v; }),
+        shell.rowSlider("쓸기 여운", 0, 2.5, 0.05, tuning.sweep,
+          function (x) { return x.toFixed(2) + "×"; },
+          function (v) { tuning.sweep = v; }),
+        shell.rowSeg("조각 수",
+          [12, 16, 18, 20, 24].map(function (n) { return { v: n, label: String(n) }; }),
+          N, function (n) { reseed(n, true); }),
+        shell.rowSeg("색", shell.paletteOptions(), paletteId, function (v) {
+          paletteId = v;
+          shell.store("tangle-palette", v);
+          applyPalette();
+        }),
+        shell.rowToggle("자기충돌", collisionOn, function (v) { collisionOn = v; }),
+        shell.rowNote("조각을 끌면 그 관절이 돌고 고리 전체가 받아줍니다. 가로질러 쭉 쓸면 지나간 관절들이 차례로 풀려납니다. 배경을 끌면 시점이 돕니다. 폐쇄오차가 0에 머무르면 그 조각 수는 고리로 닫힙니다.")
+      ];
+    }
+
+    function hud() {
+      return {
+        text: "조각 " + N +
+              " · 폐쇄오차 " + (shownErr < 1e-6 ? "0" : shownErr.toExponential(1)) +
+              " · 접촉 " + contactCount +
+              " · 잠김 " + Math.round(lockness * 100) + "%",
+        warn: shownErr >= 1e-5
+      };
+    }
+
+    reseed(16, true);
+
+    return {
+      scene: scene, camera: camera,
+      update: update, resize: resize,
+      down: down, move: move, up: up,
+      rows: rows, hud: hud,
+      action: {
+        label: "섞기",
+        run: function () {
+          theta = findClosed(N).theta.slice();
+          omega = new Array(N).fill(0);
+          prevTheta = theta.slice();
+          clickAcc = new Array(N).fill(0);
+          fk(theta);
+          recenter();
+          snapFit();      // the only way back in once the frame has widened
+          save();
+        }
+      }
+    };
+  }
+
+  /* ========================================================================
+     TOY: 키캡
+     A keycap on a switch is one degree of freedom and a force curve -- no
+     solver at all. All of the feel is in that curve and in the sound, which
+     is why three switch types are three sets of numbers rather than three
+     mechanisms.
+     ======================================================================== */
+
+  function makeKeycap(shell) {
+    var CAP_W = 1.0, CAP_H = 0.56, GAP = 1.14, TRAVEL = 0.3;
+
+    // y runs 0 (up) to 1 (bottomed out); forces are in those units, tuned so a
+    // press lands in about 40ms and the spring returns in about 70ms.
+    var PRESS = 900, PRELOAD = 120, SPRING = 260, DAMP = 26;
+    var BUMP_Y = 0.36, BUMP_W = 0.16;
+
+    var SWITCHES = {
+      linear:  { label: "리니어", bump: 0,   tick: false, click: false },
+      tactile: { label: "택타일", bump: 420, tick: true,  click: false },
+      clicky:  { label: "클릭",   bump: 620, tick: true,  click: true }
+    };
+
+    var switchId = shell.store("keycap-switch") || "tactile";
+    if (!SWITCHES[switchId]) switchId = "tactile";
+    var springScale = parseFloat(shell.store("keycap-spring")) || 1;
+    var keyCount = parseInt(shell.store("keycap-count"), 10) || 4;
+
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(38, 1, 0.1, 400);
+    var rig = new THREE.Group();
+    scene.add(rig);
+    shell.light(scene);
+    scene.fog = new THREE.Fog(shell.fogColor.clone(), 11, 26);
+
+    // ---- keycap geometry ---------------------------------------------------
+    // A rounded rectangle extruded with a bevel, then tapered toward the top so
+    // it reads as a keycap rather than a slab.
+    function roundedRect(w, d, r) {
+      var s = new THREE.Shape();
+      s.moveTo(-w / 2 + r, -d / 2);
+      s.lineTo(w / 2 - r, -d / 2);
+      s.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r);
+      s.lineTo(w / 2, d / 2 - r);
+      s.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2);
+      s.lineTo(-w / 2 + r, d / 2);
+      s.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r);
+      s.lineTo(-w / 2, -d / 2 + r);
+      s.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2);
+      return s;
+    }
+
+    function capGeometry() {
+      var geo = new THREE.ExtrudeGeometry(roundedRect(CAP_W, CAP_W, 0.15), {
+        depth: CAP_H, bevelEnabled: true,
+        bevelThickness: 0.045, bevelSize: 0.045, bevelSegments: 3,
+        curveSegments: 8
+      });
+      geo.rotateX(-Math.PI / 2);          // extrude along +Y instead of +Z
+      geo.computeBoundingBox();
+      var lo = geo.boundingBox.min.y, hi = geo.boundingBox.max.y;
+      var pos = geo.attributes.position, span = hi - lo;
+      for (var i = 0; i < pos.count; i++) {
+        var t = (pos.getY(i) - lo) / span;
+        var k = 1 - 0.22 * t;             // waist in toward the top
+        pos.setX(i, pos.getX(i) * k);
+        pos.setZ(i, pos.getZ(i) * k);
+        pos.setY(i, pos.getY(i) - lo);    // sit the base on y = 0
+      }
+      pos.needsUpdate = true;
+      geo.computeVertexNormals();
+      geo.computeBoundingBox();
+      return geo;
+    }
+
+    var capGeo = capGeometry();
+    // A thin slab of light under each cap. An unlit material reads as a light
+    // source rather than a lit surface, which is what backlight bleed is.
+    var padGeo = new THREE.ExtrudeGeometry(roundedRect(CAP_W + 0.2, CAP_W + 0.2, 0.2), {
+      depth: 0.02, bevelEnabled: false, curveSegments: 8
+    });
+    padGeo.rotateX(-Math.PI / 2);
+    var plateGeo = new THREE.BoxGeometry(1, 1, 1);
+    var keys = [], plate = null;
+    var glowOn = shell.store("keycap-glow") !== "0";
+    var keyPalette = shell.store("keycap-palette") || "rainbow";
+    var bb = new THREE.Box3();
+
+    function buildRig(n) {
+      while (rig.children.length) {
+        var c = rig.children.pop();
+        if (c.material) c.material.dispose();
+      }
+      keys = [];
+      keyCount = n;
+      var spanX = (n - 1) * GAP;
+      for (var i = 0; i < n; i++) {
+        var hsl = shell.paletteHSL(keyPalette, n > 1 ? i / (n - 1) : 0.5);
+        var hue = hsl[0];
+        var x = -spanX / 2 + i * GAP;
+        var mesh = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({
+          color: new THREE.Color().setHSL(hue, hsl[1], hsl[2]),
+          emissive: new THREE.Color(0x000000),
+          roughness: 0.52, metalness: 0.03
+        }));
+        mesh.position.set(x, 0, 0);
+        mesh.userData.index = i;
+        rig.add(mesh);
+
+        var pad = new THREE.Mesh(padGeo, new THREE.MeshBasicMaterial({
+          color: new THREE.Color().setHSL(hue, Math.max(hsl[1], 0.7), 0.62),
+          transparent: true, opacity: 0, depthWrite: false
+        }));
+        pad.position.set(x, -TRAVEL + 0.012, 0);
+        rig.add(pad);
+
+        keys.push({
+          mesh: mesh, pad: pad, hue: hue,
+          y: 0, v: 0, prevY: 0,
+          held: 0,            // how many pointers are on it
+          atBottom: false,    // already resting against the stop, so silent
+          atTop: true,
+          glow: 0
+        });
+      }
+      plate = new THREE.Mesh(plateGeo, new THREE.MeshStandardMaterial({
+        color: 0x2a2d33, roughness: 0.75, metalness: 0.05
+      }));
+      plate.scale.set(spanX + CAP_W + 0.5, 0.34, CAP_W + 0.5);
+      plate.position.set(0, -0.17 - TRAVEL, 0);
+      rig.add(plate);
+
+      // centre the whole rig on the origin so the camera can just look at it
+      bb.setFromObject(rig);
+      var c2 = bb.getCenter(new THREE.Vector3());
+      rig.position.set(-c2.x, -c2.y, -c2.z);
+      bb.setFromObject(rig);
+      snapFit();
+    }
+
+    // ---- sound -------------------------------------------------------------
+    function bottomOut(speed) {
+      var hot = Math.min(1, speed / 26);
+      shell.audio.grain({ freq: 150 + Math.random() * 45, amp: 0.16 + hot * 0.22,
+                          decay: 0.075, rate: [0.4, 0.6], q: 1.2 });
+      shell.audio.grain({ freq: 1500 + Math.random() * 600, amp: 0.04 + hot * 0.09,
+                          decay: 0.018, rate: [0.9, 1.3], q: 1.8 });
+      shell.audio.buzz(12);
+    }
+
+    function topOut(speed) {
+      var hot = Math.min(1, speed / 22);
+      shell.audio.grain({ freq: 380 + Math.random() * 90, amp: 0.05 + hot * 0.09,
+                          decay: 0.05, rate: [0.5, 0.8], q: 1.4 });
+      shell.audio.grain({ freq: 1100 + Math.random() * 400, amp: 0.02 + hot * 0.05,
+                          decay: 0.015, rate: [0.9, 1.3] });
+    }
+
+    function bumpSound(down) {
+      var sw = SWITCHES[switchId];
+      if (sw.click) {
+        shell.audio.grain({ freq: 2700 + Math.random() * 700, amp: down ? 0.22 : 0.14,
+                            decay: 0.022, rate: [1.0, 1.5], q: 3.2 });
+        shell.audio.buzz(down ? 9 : 5);
+      } else if (sw.tick && down) {
+        shell.audio.grain({ freq: 1300 + Math.random() * 300, amp: 0.07,
+                            decay: 0.016, rate: [0.9, 1.3] });
+        shell.audio.buzz(5);
+      }
+    }
+
+    // ---- camera ------------------------------------------------------------
+    var orbit = { az: 0.0, el: 0.62, zoom: 1 };
+    var fitDist = 8, fitP = new THREE.Vector3();
+
+    function computeFit() {
+      shell.fitBasis(orbit.az, orbit.el);
+      var vT = Math.tan(camera.fov * Math.PI / 360);
+      var hT = vT * camera.aspect;
+      var need = 0;
+      for (var i = 0; i < 8; i++) {
+        fitP.set(i & 1 ? bb.max.x : bb.min.x,
+                 i & 2 ? bb.max.y : bb.min.y,
+                 i & 4 ? bb.max.z : bb.min.z);
+        var n2 = shell.fitNeed(fitP, 0, hT, vT);
+        if (n2 > need) need = n2;
+      }
+      return Math.max(need * 1.14, 2.5);
+    }
+
+    function snapFit() { fitDist = computeFit(); }
+
+    function placeCamera() {
+      var d = fitDist * orbit.zoom;
+      scene.fog.color.copy(shell.fogColor);
+      scene.fog.near = d * 0.95;
+      scene.fog.far = d * 2.4;
+      var ce = Math.cos(orbit.el), se = Math.sin(orbit.el);
+      camera.position.set(d * ce * Math.sin(orbit.az), d * se, d * ce * Math.cos(orbit.az));
+      camera.lookAt(0, 0, 0);
+    }
+
+    // ---- input -------------------------------------------------------------
+    var raycaster = new THREE.Raycaster();
+    var ndc = new THREE.Vector2();
+    var held = new Map();      // pointerId -> key index, or -1 for an orbit drag
+    var orbitLast = new Map();
+    var pinch = null;
+    var pointers = new Map();
+
+    function keyUnder(ev) {
+      shell.ndc(ev, ndc);
+      scene.updateMatrixWorld(true);
+      raycaster.setFromCamera(ndc, camera);
+      var meshes = keys.map(function (k) { return k.mesh; });
+      var hits = raycaster.intersectObjects(meshes, false);
+      return hits.length ? hits[0].object.userData.index : -1;
+    }
+
+    function press(idx, pid) {
+      if (idx < 0) return;
+      keys[idx].held++;
+      held.set(pid, idx);
+    }
+
+    function release(pid) {
+      if (!held.has(pid)) return;
+      var idx = held.get(pid);
+      held.delete(pid);
+      if (idx >= 0 && keys[idx]) keys[idx].held = Math.max(0, keys[idx].held - 1);
+    }
+
+    function down(ev) {
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pointers.size === 2) {
+        var pts = Array.from(pointers.values());
+        pinch = { d0: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), zoom0: orbit.zoom };
+      }
+      var idx = keyUnder(ev);
+      if (idx >= 0) press(idx, ev.pointerId);
+      else orbitLast.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    }
+
+    function move(ev) {
+      if (!pointers.has(ev.pointerId)) return;
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+      if (pinch && pointers.size === 2) {
+        var pts = Array.from(pointers.values());
+        var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (pinch.d0 > 0) orbit.zoom = Math.max(0.5, Math.min(2.2, pinch.zoom0 * (pinch.d0 / d)));
+        return;
+      }
+
+      if (orbitLast.has(ev.pointerId)) {
+        var o = orbitLast.get(ev.pointerId);
+        orbit.az -= (ev.clientX - o.x) * 0.008;
+        orbit.el = Math.max(0.12, Math.min(1.35, orbit.el + (ev.clientY - o.y) * 0.008));
+        o.x = ev.clientX; o.y = ev.clientY;
+        return;
+      }
+
+      // Rolling a finger across the row is the whole point of having several
+      // keys, so a held pointer hands over to whatever it slides onto.
+      if (held.has(ev.pointerId)) {
+        var now = keyUnder(ev);
+        if (now !== held.get(ev.pointerId)) {
+          release(ev.pointerId);
+          if (now >= 0) press(now, ev.pointerId);
+          else held.set(ev.pointerId, -1);
+        }
+      }
+    }
+
+    function up(ev) {
+      pointers.delete(ev.pointerId);
+      if (pointers.size < 2) pinch = null;
+      // The rig is rigid, so the only thing that can change its framing is the
+      // angle you look at it from. Re-frame when the gesture ends, never during
+      // play: a camera that keeps re-measuring is what made the toy drift.
+      if (orbitLast.has(ev.pointerId)) { orbitLast.delete(ev.pointerId); snapFit(); }
+      release(ev.pointerId);
+    }
+
+    // ---- frame -------------------------------------------------------------
+    var pressedCount = 0;
+
+    function update(dt, now) {
+      var sw = SWITCHES[switchId];
+      pressedCount = 0;
+      var steps = 3;                       // substeps: the press is fast
+      var h = dt / steps;
+
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (k.held > 0) pressedCount++;
+        for (var s = 0; s < steps; s++) {
+          k.prevY = k.y;
+          // spring, plus the tactile hump as a signed Gaussian: resisting on
+          // the way in, then helping, which is what the "snap" actually is
+          var d = (k.y - BUMP_Y) / BUMP_W;
+          var resist = PRELOAD + SPRING * springScale * k.y
+                     + sw.bump * (-d) * Math.exp(-d * d * 1.5);
+          var acc = (k.held > 0 ? PRESS : 0) - resist - DAMP * k.v;
+          k.v += acc * h;
+          k.y += k.v * h;
+
+          // Only the arrival makes a sound. Resting against a stop still has
+          // the finger pushing, so the velocity is rebuilt and zeroed every
+          // substep: testing the velocity alone re-fired the bottom-out 180
+          // times a second for as long as the key was held down.
+          if (k.y >= 1) {
+            k.y = 1;
+            if (!k.atBottom && k.v > 2) { bottomOut(k.v); if (glowOn) k.glow = 1; }
+            k.atBottom = true;
+            k.v = 0;
+          } else if (k.y <= 0) {
+            k.y = 0;
+            if (!k.atTop && k.v < -2) topOut(-k.v);
+            k.atTop = true;
+            k.v = 0;
+          } else {
+            k.atBottom = false;
+            k.atTop = false;
+            if (sw.bump > 0) {
+              if (k.prevY < BUMP_Y && k.y >= BUMP_Y) bumpSound(true);
+              else if (k.prevY > BUMP_Y && k.y <= BUMP_Y) bumpSound(false);
+            }
+          }
+        }
+        k.mesh.position.y = -k.y * TRAVEL;
+
+        // Lit while the key is down, then fading, so rolling across the row
+        // leaves a trail instead of flickering.
+        k.glow = Math.max(k.glow - dt * 2.4, glowOn ? k.y : 0);
+        k.mesh.material.emissive.setHSL(k.hue, 0.8, 0.3 * k.glow);
+        k.pad.material.opacity = 0.8 * k.glow;
+        k.pad.visible = k.glow > 0.004;
+      }
+
+      placeCamera();
+    }
+
+    function resize(w, h) {
+      camera.aspect = w / Math.max(h, 1);
+      camera.updateProjectionMatrix();
+      snapFit();
+      placeCamera();
+    }
+
+    function rows() {
+      return [
+        shell.rowSeg("스위치",
+          ["linear", "tactile", "clicky"].map(function (id) {
+            return { v: id, label: SWITCHES[id].label };
+          }),
+          switchId,
+          function (v) { switchId = v; shell.store("keycap-switch", v); }),
+        shell.rowSlider("스프링 세기", 0.45, 2.2, 0.05, springScale,
+          function (x) { return x.toFixed(2) + "×"; },
+          function (v) { springScale = v; shell.store("keycap-spring", String(v)); }),
+        shell.rowSeg("키 개수",
+          [1, 3, 4, 6].map(function (n) { return { v: n, label: String(n) }; }),
+          keyCount,
+          function (n) { buildRig(n); shell.store("keycap-count", String(n)); }),
+        shell.rowSeg("색", shell.paletteOptions(), keyPalette, function (v) {
+          keyPalette = v;
+          shell.store("keycap-palette", v);
+          buildRig(keyCount);
+        }),
+        shell.rowToggle("불빛", glowOn, function (v) {
+          glowOn = v;
+          shell.store("keycap-glow", v ? "1" : "0");
+        }),
+        shell.rowNote("키를 누르면 내려가고 떼면 스프링이 올려 보냅니다. 손가락을 옆으로 굴리면 지나간 키가 차례로 눌립니다. 여러 손가락으로 동시에 눌러도 됩니다. 배경을 끌면 시점이 돕니다.")
+      ];
+    }
+
+    function hud() {
+      return {
+        text: "스위치 " + SWITCHES[switchId].label +
+              " · 키 " + keys.length +
+              " · 눌림 " + pressedCount,
+        warn: false
+      };
+    }
+
+    buildRig(keyCount);
+
+    return {
+      scene: scene, camera: camera,
+      update: update, resize: resize,
+      down: down, move: move, up: up,
+      rows: rows, hud: hud
+    };
+  }
+
+  /* ========================================================================
+     TOY: 말랑이
+     A pressure soft body: the surface vertices are particles, the mesh edges
+     keep the skin from stretching, and one global constraint holds the volume
+     of the closed mesh. That volume term is the whole toy -- it is why a dent
+     under the finger makes the rest bulge out, and why it springs back. No tet
+     mesh is needed, because a closed surface already bounds a volume.
+     ======================================================================== */
+
+  function makeSquishy(shell) {
+    var RADIUS = 1.55;
+
+    var COLORS = {
+      peach:    { label: "복숭아", hex: 0xf2a09a },
+      mint:     { label: "민트",   hex: 0x8fd9c0 },
+      lavender: { label: "라벤더", hex: 0xb3a6e8 },
+      lemon:    { label: "레몬",   hex: 0xf0dd92 },
+      sky:      { label: "하늘",   hex: 0x93c5ed },
+      clay:     { label: "찰흙",   hex: 0x9aa0a8 }
+    };
+
+    // The real toys differ mostly in one thing: how fast the dent fills back
+    // in. Silicone snaps, dough sits there, slow-rise foam takes seconds. So
+    // the presets are mostly about damping and how far the skin yields.
+    var TEXTURES = {
+      mochi:  { label: "모찌",   stiff: 0.92, pressure: 1.00, damp: 0.955, give: 0,    back: 8.0 },
+      gel:    { label: "젤",     stiff: 0.80, pressure: 0.95, damp: 0.900, give: 0,    back: 8.0 },
+      dough:  { label: "니도",   stiff: 0.50, pressure: 0.80, damp: 0.820, give: 3.5,  back: 0.8 },
+      foam:   { label: "저반발", stiff: 0.45, pressure: 0.60, damp: 0.800, give: 6.0,  back: 0.35 },
+      goo:    { label: "슬라임", stiff: 0.32, pressure: 0.45, damp: 0.780, give: 9.0,  back: 0.25 },
+      // Grain packed in a skin does not spring back at all: the grains jam
+      // against each other and simply stay where you pushed them. So this one
+      // yields hard and barely recovers.
+      sand:   { label: "모래주머니", stiff: 0.60, pressure: 0.75, damp: 0.720, give: 14, back: 0.02 }
+    };
+
+    var params = {
+      detail: parseInt(shell.store("squishy-detail"), 10) || 2,
+      stiff: 0.92, pressure: 1, damp: 0.955, give: 0, back: 8,
+      fingerR: 0.5
+    };
+    var textureId = shell.store("squishy-texture") || "mochi";
+    if (!TEXTURES[textureId]) textureId = "mochi";
+    applyTexture(textureId);
+
+    function applyTexture(id) {
+      var t = TEXTURES[id];
+      textureId = id;
+      params.stiff = t.stiff;
+      params.pressure = t.pressure;
+      params.damp = t.damp;
+      params.give = t.give;
+      params.back = t.back;
+      shell.store("squishy-texture", id);
+    }
+
+    var colorId = shell.store("squishy-color") || "peach";
+    if (!COLORS[colorId]) colorId = "peach";
+
+    // What is sealed inside. The real ones are a clear skin over water beads,
+    // over bigger marbles, or over glitter; the difference on the hand is how
+    // lumpy it feels, and on the eye how much is moving in there.
+    var FILLS = {
+      // counts chosen for how full the ball looks, not for tidiness: a real
+      // water-bead ball is packed, and glitter is a sparse dusting
+      none:    { label: "없음",   count: 0,   r: 0,     hue: 0,    rough: 0.4,  metal: 0,    op: 1,    sound: null },
+      orbeez:  { label: "알갱이", count: 150, r: 0.21,  hue: 0.55, rough: 0.2,  metal: 0.1,  op: 0.55, sound: "rustle" },
+      marble:  { label: "구슬",   count: 30,  r: 0.30,  hue: 0.08, rough: 0.15, metal: 0.35, op: 0.55, sound: "rustle" },
+      glitter: { label: "반짝이", count: 380, r: 0.055, hue: 0.13, rough: 0.1,  metal: 0.8,  op: 0.5,  sound: "rustle" },
+      // Grain is felt and heard far more than it is seen, so the skin stays
+      // nearly opaque and the work goes into the crunch.
+      sand:    { label: "곡식",   count: 300, r: 0.075, hue: 0.09, rough: 0.95, metal: 0,    op: 0.78, sound: "crunch" }
+    };
+    var fillId = shell.store("squishy-fill") || "orbeez";
+    if (!FILLS[fillId]) fillId = "orbeez";
+
+    // The mesh ball is the opposite of a filling: a net on the OUTSIDE that
+    // cannot stretch, so squeezing makes the gel bulge out through the holes.
+    var skinId = shell.store("squishy-skin") || "plain";   // plain | net | wax
+    var netOn = skinId === "net", waxOn = skinId === "wax";
+    var NET_W = 0.10;          // half-width of a net line, in periods
+    var netMask = null, restDir = null;
+
+    // 왁뿌볼: a soft core sealed under a brittle wax crust. The crust is split
+    // into plates; each one holds its patch of the core rigid until the push
+    // on it passes what wax will take, and then it lets go with a crack. The
+    // one-shot-ness is the point, so there is a button to coat it again.
+    var WAX_PATCHES = 26;
+    var WAX_T = 0.07;          // crust thickness
+    var WAX_STIFF = 0.55;      // how hard a plate holds its patch at rest
+    var WAX_LIMIT = 0.07;      // give, in world units, before it snaps
+    var plates = [], waxIntact = 0;
+
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(40, 1, 0.1, 400);
+    shell.light(scene);
+    scene.fog = new THREE.Fog(shell.fogColor.clone(), 11, 26);
+
+    // ---- icosphere ---------------------------------------------------------
+    // Built by hand rather than taken from IcosahedronGeometry, which is
+    // unindexed: the physics needs shared vertices and an edge list.
+    function icosphere(detail) {
+      var t = (1 + Math.sqrt(5)) / 2;
+      var verts = [
+        [-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0],
+        [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t],
+        [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]
+      ].map(function (v) {
+        var L = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        return [v[0] / L, v[1] / L, v[2] / L];
+      });
+      var faces = [
+        [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+        [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+        [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+        [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]
+      ];
+      for (var d = 0; d < detail; d++) {
+        var mid = {}, next = [];
+        var midpoint = function (a, b) {
+          var key = a < b ? a + "_" + b : b + "_" + a;
+          if (mid[key] !== undefined) return mid[key];
+          var va = verts[a], vb = verts[b];
+          var x = va[0] + vb[0], y = va[1] + vb[1], z = va[2] + vb[2];
+          var L = Math.sqrt(x * x + y * y + z * z);
+          verts.push([x / L, y / L, z / L]);
+          mid[key] = verts.length - 1;
+          return mid[key];
+        };
+        for (var f = 0; f < faces.length; f++) {
+          var fa = faces[f];
+          var a = midpoint(fa[0], fa[1]), b = midpoint(fa[1], fa[2]), c = midpoint(fa[2], fa[0]);
+          next.push([fa[0], a, c], [fa[1], b, a], [fa[2], c, b], [a, b, c]);
+        }
+        faces = next;
+      }
+      return { verts: verts, faces: faces };
+    }
+
+    // ---- state -------------------------------------------------------------
+    var n = 0, faceCount = 0, edgeCount = 0;
+    var P, Prev, Vel, grad, faceIdx, edgeIdx, restLen, rest0;
+    var V0 = 1, volume = 1;
+    var geo = null, mesh = null;
+
+    function build(detail) {
+      params.detail = detail;
+      var ico = icosphere(detail);
+      n = ico.verts.length;
+      faceCount = ico.faces.length;
+
+      P = new Float64Array(n * 3);
+      Prev = new Float64Array(n * 3);
+      Vel = new Float64Array(n * 3);
+      grad = new Float64Array(n * 3);
+      restDir = new Float32Array(n * 3);
+      for (var i = 0; i < n; i++) {
+        P[i * 3] = ico.verts[i][0] * RADIUS;
+        P[i * 3 + 1] = ico.verts[i][1] * RADIUS;
+        P[i * 3 + 2] = ico.verts[i][2] * RADIUS;
+        restDir[i * 3] = ico.verts[i][0];
+        restDir[i * 3 + 1] = ico.verts[i][1];
+        restDir[i * 3 + 2] = ico.verts[i][2];
+      }
+      Prev.set(P);
+
+      faceIdx = new Uint32Array(faceCount * 3);
+      for (var f = 0; f < faceCount; f++) {
+        faceIdx[f * 3] = ico.faces[f][0];
+        faceIdx[f * 3 + 1] = ico.faces[f][1];
+        faceIdx[f * 3 + 2] = ico.faces[f][2];
+      }
+
+      var seen = {}, pairs = [];
+      for (var f2 = 0; f2 < faceCount; f2++) {
+        var t3 = ico.faces[f2];
+        for (var e = 0; e < 3; e++) {
+          var a = t3[e], b = t3[(e + 1) % 3];
+          var key = a < b ? a + "_" + b : b + "_" + a;
+          if (seen[key]) continue;
+          seen[key] = 1;
+          pairs.push(a, b);
+        }
+      }
+      edgeCount = pairs.length / 2;
+      edgeIdx = new Uint32Array(pairs);
+      restLen = new Float64Array(edgeCount);
+      for (var e2 = 0; e2 < edgeCount; e2++) {
+        var i0 = edgeIdx[e2 * 2] * 3, i1 = edgeIdx[e2 * 2 + 1] * 3;
+        var dx = P[i1] - P[i0], dy = P[i1 + 1] - P[i0 + 1], dz = P[i1 + 2] - P[i0 + 2];
+        restLen[e2] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+      rest0 = restLen.slice();
+
+      if (mesh) { scene.remove(mesh); geo.dispose(); mesh.material.dispose(); }
+      geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      geo.setIndex(new THREE.BufferAttribute(faceIdx, 1));
+      geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        color: COLORS[colorId].hex, roughness: 0.46, metalness: 0.0,
+        vertexColors: true
+      }));
+      scene.add(mesh);
+      buildNet();
+      buildWax();
+
+      V0 = meshVolume();
+      volume = V0;
+      syncGeometry();
+      snapFit();
+      buildBeads(fillId);
+    }
+
+    // ---- the net on the outside --------------------------------------------
+    // Lines of latitude and longitude on the REST sphere, so the pattern is
+    // painted on the material and stays put however the ball is squashed.
+    function nearLine(x) { var f = x - Math.floor(x); return f < 1 - f ? f : 1 - f; }
+
+    function buildNet() {
+      netMask = new Uint8Array(n);
+      var col = geo.attributes.color.array;
+      for (var i = 0; i < n; i++) {
+        var on = 0;
+        if (netOn) {
+          var ux = restDir[i * 3], uy = restDir[i * 3 + 1], uz = restDir[i * 3 + 2];
+          var phi = Math.atan2(uz, ux);
+          var th = Math.acos(Math.max(-1, Math.min(1, uy)));
+          if (nearLine(phi / (Math.PI * 2) * 6) < NET_W ||
+              nearLine(th / Math.PI * 4) < NET_W) on = 1;
+        }
+        netMask[i] = on;
+        var v = on ? 0.45 : 1;   // a cord, not a shadow
+        col[i * 3] = v; col[i * 3 + 1] = v; col[i * 3 + 2] = v;
+      }
+      geo.attributes.color.needsUpdate = true;
+    }
+
+    // The net cannot stretch, so a vertex on it may move inward but never out.
+    // Everything between the lines is free, and the volume constraint pushes
+    // it through the holes.
+    function solveNet() {
+      if (!netOn) return;
+      for (var i = 0; i < n; i++) {
+        if (!netMask[i]) continue;
+        var k3 = i * 3;
+        var d = Math.sqrt(P[k3] * P[k3] + P[k3 + 1] * P[k3 + 1] + P[k3 + 2] * P[k3 + 2]);
+        if (d <= RADIUS || d < 1e-9) continue;
+        var s = RADIUS / d;
+        P[k3] *= s; P[k3 + 1] *= s; P[k3 + 2] *= s;
+      }
+    }
+
+    // ---- the wax crust -----------------------------------------------------
+    var waxMat0 = new THREE.Color(0xf6f0e2);
+
+    function clearWax() {
+      for (var i = 0; i < plates.length; i++) {
+        scene.remove(plates[i].mesh);
+        plates[i].geo.dispose();
+        plates[i].mesh.material.dispose();
+      }
+      plates = [];
+      waxIntact = 0;
+    }
+
+    function buildWax() {
+      clearWax();
+      if (!waxOn) return;
+
+      // plate seeds spread evenly over the sphere, then every face joins the
+      // seed it is nearest: irregular plates, the way wax actually breaks
+      var seeds = [];
+      var ga = Math.PI * (3 - Math.sqrt(5));
+      for (var s = 0; s < WAX_PATCHES; s++) {
+        var y = 1 - (s / (WAX_PATCHES - 1)) * 2;
+        var rr = Math.sqrt(Math.max(0, 1 - y * y));
+        var th = ga * s;
+        seeds.push([Math.cos(th) * rr, y, Math.sin(th) * rr]);
+      }
+
+      var buckets = [];
+      for (var b = 0; b < WAX_PATCHES; b++) buckets.push([]);
+      for (var f = 0; f < faceCount; f++) {
+        var a = faceIdx[f * 3], bb = faceIdx[f * 3 + 1], c = faceIdx[f * 3 + 2];
+        var cx = restDir[a * 3] + restDir[bb * 3] + restDir[c * 3];
+        var cy = restDir[a * 3 + 1] + restDir[bb * 3 + 1] + restDir[c * 3 + 1];
+        var cz = restDir[a * 3 + 2] + restDir[bb * 3 + 2] + restDir[c * 3 + 2];
+        var L = Math.sqrt(cx * cx + cy * cy + cz * cz) || 1;
+        cx /= L; cy /= L; cz /= L;
+        var best = 0, bestDot = -2;
+        for (var q = 0; q < WAX_PATCHES; q++) {
+          var d = cx * seeds[q][0] + cy * seeds[q][1] + cz * seeds[q][2];
+          if (d > bestDot) { bestDot = d; best = q; }
+        }
+        buckets[best].push(f);
+      }
+
+      for (var p = 0; p < WAX_PATCHES; p++) {
+        var fl = buckets[p];
+        if (!fl.length) continue;
+        var fv = new Int32Array(fl.length * 3);
+        var uniq = {}, list = [];
+        for (var k = 0; k < fl.length; k++) {
+          for (var e = 0; e < 3; e++) {
+            var vi = faceIdx[fl[k] * 3 + e];
+            fv[k * 3 + e] = vi;
+            if (!uniq[vi]) { uniq[vi] = 1; list.push(vi); }
+          }
+        }
+        var g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(fv.length * 3), 3));
+        var tint = waxMat0.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.06);
+        var m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+          color: tint, roughness: 0.55, metalness: 0.02, flatShading: true
+        }));
+        m.frustumCulled = false;
+        scene.add(m);
+        plates.push({
+          mesh: m, geo: g, faceVerts: fv, verts: list,
+          seed: seeds[p], broken: false, stress: 0,
+          limit: WAX_LIMIT, life: 0,
+          vel: new THREE.Vector3(), spin: new THREE.Vector3()
+        });
+      }
+      waxIntact = plates.length;
+
+      // neighbours, so one plate letting go weakens the ones beside it
+      for (var i2 = 0; i2 < plates.length; i2++) {
+        plates[i2].nbrs = [];
+        for (var j2 = 0; j2 < plates.length; j2++) {
+          if (i2 === j2) continue;
+          var dp = plates[i2].seed[0] * plates[j2].seed[0] +
+                   plates[i2].seed[1] * plates[j2].seed[1] +
+                   plates[i2].seed[2] * plates[j2].seed[2];
+          if (dp > 0.62) plates[i2].nbrs.push(plates[j2]);
+        }
+      }
+      refreshWaxMesh();
+    }
+
+    // While a plate is on, its patch of the core is held at the rest sphere.
+    // That is what makes a waxed ball feel hard: you push and nothing gives,
+    // until it does.
+    function solveWax() {
+      if (!waxOn) return;
+      for (var p = 0; p < plates.length; p++) {
+        var pl = plates[p];
+        if (pl.broken) continue;
+        var vi = pl.verts, maxd = 0;
+        for (var a = 0; a < vi.length; a++) {
+          var i3 = vi[a] * 3;
+          var dx = restDir[i3] * RADIUS - P[i3];
+          var dy = restDir[i3 + 1] * RADIUS - P[i3 + 1];
+          var dz = restDir[i3 + 2] * RADIUS - P[i3 + 2];
+          var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (d > maxd) maxd = d;
+          P[i3] += dx * WAX_STIFF;
+          P[i3 + 1] += dy * WAX_STIFF;
+          P[i3 + 2] += dz * WAX_STIFF;
+        }
+        pl.stress = maxd;
+      }
+    }
+
+    function crackSound() {
+      shell.audio.grain({ freq: 3200 + Math.random() * 2200, amp: 0.30,
+                          decay: 0.035, rate: [1.2, 2.0], q: 1.4 });
+      shell.audio.grain({ freq: 700 + Math.random() * 300, amp: 0.17,
+                          decay: 0.07, rate: [0.5, 0.8], q: 1.0 });
+      shell.audio.buzz(16);
+    }
+
+    var waxTmp = new THREE.Vector3();
+
+    function breakPlate(pl) {
+      pl.broken = true;
+      pl.life = 1.5;
+      waxIntact--;
+
+      // freeze the shard where it is, then move it as one rigid piece
+      var arr = pl.geo.attributes.position.array;
+      var cx = 0, cy = 0, cz = 0, cnt = arr.length / 3;
+      for (var i = 0; i < cnt; i++) { cx += arr[i * 3]; cy += arr[i * 3 + 1]; cz += arr[i * 3 + 2]; }
+      cx /= cnt; cy /= cnt; cz /= cnt;
+      for (var j = 0; j < cnt; j++) {
+        arr[j * 3] -= cx; arr[j * 3 + 1] -= cy; arr[j * 3 + 2] -= cz;
+      }
+      pl.geo.attributes.position.needsUpdate = true;
+      pl.geo.computeVertexNormals();
+      pl.mesh.position.set(cx, cy, cz);
+
+      waxTmp.set(cx, cy, cz).normalize();
+      pl.vel.copy(waxTmp).multiplyScalar(1.1 + Math.random() * 0.9);
+      pl.vel.x += (Math.random() - 0.5) * 0.8;
+      pl.vel.y += (Math.random() - 0.5) * 0.8;
+      pl.vel.z += (Math.random() - 0.5) * 0.8;
+      pl.spin.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+        .multiplyScalar(7);
+      pl.mesh.material.transparent = true;
+      pl.mesh.material.needsUpdate = true;
+
+      for (var k = 0; k < pl.nbrs.length; k++) {
+        if (!pl.nbrs[k].broken) pl.nbrs[k].limit *= 0.55;
+      }
+      crackSound();
+    }
+
+    function refreshWaxMesh() {
+      for (var p = 0; p < plates.length; p++) {
+        var pl = plates[p];
+        if (pl.broken) continue;
+        var arr = pl.geo.attributes.position.array, fv = pl.faceVerts;
+        for (var a = 0; a < fv.length; a++) {
+          var i3 = fv[a] * 3;
+          var x = P[i3], y = P[i3 + 1], z = P[i3 + 2];
+          var L = Math.sqrt(x * x + y * y + z * z) || 1;
+          var s = (L + WAX_T) / L;
+          arr[a * 3] = x * s; arr[a * 3 + 1] = y * s; arr[a * 3 + 2] = z * s;
+        }
+        pl.geo.attributes.position.needsUpdate = true;
+        pl.geo.computeVertexNormals();
+      }
+    }
+
+    function updateWax(dt) {
+      if (!waxOn) return;
+      for (var p = 0; p < plates.length; p++) {
+        var pl = plates[p];
+        if (!pl.broken) {
+          if (pl.stress > pl.limit) breakPlate(pl);
+          continue;
+        }
+        pl.life -= dt;
+        if (pl.life <= 0) { pl.mesh.visible = false; continue; }
+        pl.vel.y -= 3.2 * dt;                       // a little weight
+        pl.mesh.position.addScaledVector(pl.vel, dt);
+        pl.mesh.rotation.x += pl.spin.x * dt;
+        pl.mesh.rotation.y += pl.spin.y * dt;
+        pl.mesh.rotation.z += pl.spin.z * dt;
+        pl.mesh.material.opacity = Math.min(1, pl.life / 0.7);
+      }
+      refreshWaxMesh();
+    }
+
+    // ---- what is inside ----------------------------------------------------
+    var beadCount = 0, beadR = 0, BP = null, BV = null, beadMesh = null;
+    var beadGeo = null, vdir = null, vrad = null;
+    var dummy = new THREE.Object3D();
+    var rustle = 0;
+
+    function buildBeads(id) {
+      fillId = id;
+      shell.store("squishy-fill", id);
+      if (beadMesh) {
+        scene.remove(beadMesh);
+        beadGeo.dispose();
+        beadMesh.material.dispose();
+        beadMesh = null;
+      }
+      var f = FILLS[id];
+      beadCount = f.count;
+      beadR = f.r;
+
+      // A skin you cannot see through hides the whole point of a filling.
+      var see = beadCount > 0;
+      mesh.material.transparent = see;
+      mesh.material.opacity = f.op;
+      mesh.material.depthWrite = !see;
+      mesh.material.needsUpdate = true;
+
+      if (!beadCount) { BP = BV = null; return; }
+
+      BP = new Float64Array(beadCount * 3);
+      BV = new Float64Array(beadCount * 3);
+      var reach = RADIUS - beadR - 0.04;
+      for (var i = 0; i < beadCount; i++) {
+        // rejection-free: a cube-root radius gives a uniform fill
+        var u = Math.random(), ct = Math.random() * 2 - 1, ph = Math.random() * Math.PI * 2;
+        var rr = reach * Math.cbrt(u), st = Math.sqrt(1 - ct * ct);
+        BP[i * 3] = rr * st * Math.cos(ph);
+        BP[i * 3 + 1] = rr * st * Math.sin(ph);
+        BP[i * 3 + 2] = rr * ct;
+      }
+
+      beadGeo = new THREE.SphereGeometry(beadR, 8, 6);
+      beadMesh = new THREE.InstancedMesh(beadGeo, new THREE.MeshStandardMaterial({
+        roughness: f.rough, metalness: f.metal
+      }), beadCount);
+      beadMesh.frustumCulled = false;
+      if (beadMesh.setColorAt) {
+        var c = new THREE.Color();
+        for (var k = 0; k < beadCount; k++) {
+          c.setHSL(f.hue + Math.random() * 0.22, 0.55, 0.45 + Math.random() * 0.25);
+          beadMesh.setColorAt(k, c);
+        }
+        if (beadMesh.instanceColor) beadMesh.instanceColor.needsUpdate = true;
+      }
+      scene.add(beadMesh);
+
+      vdir = new Float64Array(n * 3);
+      vrad = new Float64Array(n);
+    }
+
+    // Beads are kept in by the skin itself: the shell is star-shaped about its
+    // centre, so its radius along a bead's own direction is the wall the bead
+    // has to stay behind. Dent the shell and that wall moves in, which is what
+    // shoves the beads aside.
+    function stepBeads(dt) {
+      if (!beadCount) return;
+      var i, j, k3;
+
+      var minRad = Infinity;
+      for (i = 0; i < n; i++) {
+        var px = P[i * 3], py = P[i * 3 + 1], pz = P[i * 3 + 2];
+        var r = Math.sqrt(px * px + py * py + pz * pz) || 1e-6;
+        vdir[i * 3] = px / r; vdir[i * 3 + 1] = py / r; vdir[i * 3 + 2] = pz / r;
+        vrad[i] = r;
+        if (r < minRad) minRad = r;
+      }
+      // Anything this far in cannot be touching the wall anywhere, so it does
+      // not need the wall looked up at all. With five hundred specks of
+      // glitter that is most of the work skipped.
+      var safeIn = minRad - beadR;
+
+      var fr = Math.pow(0.82, dt * 60);
+      var moved = 0;
+
+      for (i = 0; i < beadCount; i++) {
+        k3 = i * 3;
+        BP[k3] += BV[k3] * dt; BP[k3 + 1] += BV[k3 + 1] * dt; BP[k3 + 2] += BV[k3 + 2] * dt;
+
+        fingers.forEach(function (fg) {
+          var rr = params.fingerR + beadR;
+          var dx = BP[k3] - fg.c.x, dy = BP[k3 + 1] - fg.c.y, dz = BP[k3 + 2] - fg.c.z;
+          var d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 >= rr * rr || d2 < 1e-10) return;
+          var s = rr / Math.sqrt(d2);
+          BP[k3] = fg.c.x + dx * s; BP[k3 + 1] = fg.c.y + dy * s; BP[k3 + 2] = fg.c.z + dz * s;
+        });
+
+        var bx = BP[k3], by = BP[k3 + 1], bz = BP[k3 + 2];
+        var bl = Math.sqrt(bx * bx + by * by + bz * bz);
+        if (bl > 1e-6 && bl > safeIn) {
+          var ux = bx / bl, uy = by / bl, uz = bz / bl;
+          var best = -2, wall = RADIUS;
+          for (j = 0; j < n; j++) {
+            var dot = ux * vdir[j * 3] + uy * vdir[j * 3 + 1] + uz * vdir[j * 3 + 2];
+            if (dot > best) { best = dot; wall = vrad[j]; }
+          }
+          var lim = wall - beadR;
+          if (bl > lim) {
+            var s2 = lim / bl;
+            BP[k3] = bx * s2; BP[k3 + 1] = by * s2; BP[k3 + 2] = bz * s2;
+            var vr = BV[k3] * ux + BV[k3 + 1] * uy + BV[k3 + 2] * uz;
+            if (vr > 0) { BV[k3] -= vr * ux; BV[k3 + 1] -= vr * uy; BV[k3 + 2] -= vr * uz; }
+          }
+        }
+
+        BV[k3] *= fr; BV[k3 + 1] *= fr; BV[k3 + 2] *= fr;
+        moved += Math.abs(BV[k3]) + Math.abs(BV[k3 + 1]) + Math.abs(BV[k3 + 2]);
+      }
+
+      // Keep them apart, but only when there are few enough for it to matter;
+      // glitter flakes overlapping is what glitter looks like.
+      if (beadCount <= 200) {
+        var sep = beadR * 2;
+        for (i = 0; i < beadCount; i++) {
+          for (j = i + 1; j < beadCount; j++) {
+            var ax = BP[i * 3] - BP[j * 3];
+            var ay = BP[i * 3 + 1] - BP[j * 3 + 1];
+            var az = BP[i * 3 + 2] - BP[j * 3 + 2];
+            var dd = ax * ax + ay * ay + az * az;
+            if (dd >= sep * sep || dd < 1e-10) continue;
+            var d = Math.sqrt(dd), push = (sep - d) / d * 0.5;
+            ax *= push; ay *= push; az *= push;
+            BP[i * 3] += ax; BP[i * 3 + 1] += ay; BP[i * 3 + 2] += az;
+            BP[j * 3] -= ax; BP[j * 3 + 1] -= ay; BP[j * 3 + 2] -= az;
+          }
+        }
+      }
+
+      for (i = 0; i < beadCount; i++) {
+        dummy.position.set(BP[i * 3], BP[i * 3 + 1], BP[i * 3 + 2]);
+        dummy.updateMatrix();
+        beadMesh.setMatrixAt(i, dummy.matrix);
+      }
+      beadMesh.instanceMatrix.needsUpdate = true;
+
+      rustle -= dt;
+      var speed = moved / beadCount;
+      if (FILLS[fillId].sound === "rustle" && speed > 0.9 && rustle <= 0) {
+        shell.audio.grain({ freq: 2600 + Math.random() * 900, amp: 0.05,
+                            decay: 0.05, rate: [1.0, 1.6], q: 1.2 });
+        rustle = 0.09;
+      }
+    }
+
+    // A grain-filled skin does not rustle, it crackles: a dense run of very
+    // short clicks for as long as the thing is being squeezed. Driving it off
+    // the skin's own rate of change rather than the grains means it crunches
+    // while you press and goes quiet the moment you stop.
+    var crunchCool = 0;
+    function crunchSound(dt, rate) {
+      crunchCool -= dt;
+      if (FILLS[fillId].sound !== "crunch") return;
+      if (rate < 0.5 || crunchCool > 0) return;
+      var hot = Math.min(1, rate / 4);
+      for (var c = 0; c < 3; c++) {
+        shell.audio.grain({
+          freq: 2800 + Math.random() * 3200,
+          amp: 0.03 + hot * 0.05,
+          decay: 0.012, rate: [1.1, 1.9], q: 1.0
+        });
+      }
+      shell.audio.buzz(3);
+      crunchCool = 0.045;
+    }
+
+    // Signed volume of a closed mesh: sum of the tetrahedra each face makes
+    // with the origin.
+    function meshVolume() {
+      var v = 0;
+      for (var f = 0; f < faceCount; f++) {
+        var a = faceIdx[f * 3] * 3, b = faceIdx[f * 3 + 1] * 3, c = faceIdx[f * 3 + 2] * 3;
+        var ax = P[a], ay = P[a + 1], az = P[a + 2];
+        var bx = P[b], by = P[b + 1], bz = P[b + 2];
+        v += (ay * bz - az * by) * P[c] +
+             (az * bx - ax * bz) * P[c + 1] +
+             (ax * by - ay * bx) * P[c + 2];
+      }
+      return v / 6;
+    }
+
+    function solveVolume(k) {
+      grad.fill(0);
+      var v = 0, f, a, b, c, ax, ay, az, bx, by, bz, cx, cy, cz;
+      for (f = 0; f < faceCount; f++) {
+        a = faceIdx[f * 3] * 3; b = faceIdx[f * 3 + 1] * 3; c = faceIdx[f * 3 + 2] * 3;
+        ax = P[a]; ay = P[a + 1]; az = P[a + 2];
+        bx = P[b]; by = P[b + 1]; bz = P[b + 2];
+        cx = P[c]; cy = P[c + 1]; cz = P[c + 2];
+        v += (ay * bz - az * by) * cx + (az * bx - ax * bz) * cy + (ax * by - ay * bx) * cz;
+        grad[a] += by * cz - bz * cy;        // 6 * dV/da = b x c
+        grad[a + 1] += bz * cx - bx * cz;
+        grad[a + 2] += bx * cy - by * cx;
+        grad[b] += cy * az - cz * ay;        // 6 * dV/db = c x a
+        grad[b + 1] += cz * ax - cx * az;
+        grad[b + 2] += cx * ay - cy * ax;
+        grad[c] += ay * bz - az * by;        // 6 * dV/dc = a x b
+        grad[c + 1] += az * bx - ax * bz;
+        grad[c + 2] += ax * by - ay * bx;
+      }
+      volume = v / 6;
+
+      var sum = 0, i;
+      for (i = 0; i < grad.length; i++) { grad[i] /= 6; sum += grad[i] * grad[i]; }
+      if (sum < 1e-12) return;
+      var lambda = -((volume - V0) / sum) * k;
+      for (i = 0; i < grad.length; i++) P[i] += lambda * grad[i];
+    }
+
+    function solveEdges(k) {
+      for (var e = 0; e < edgeCount; e++) {
+        var i = edgeIdx[e * 2] * 3, j = edgeIdx[e * 2 + 1] * 3;
+        var dx = P[j] - P[i], dy = P[j + 1] - P[i + 1], dz = P[j + 2] - P[i + 2];
+        var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d < 1e-9) continue;
+        var w = ((d - restLen[e]) / d) * 0.5 * k;
+        P[i] += dx * w; P[i + 1] += dy * w; P[i + 2] += dz * w;
+        P[j] -= dx * w; P[j + 1] -= dy * w; P[j + 2] -= dz * w;
+      }
+    }
+
+    // A fingertip is a sphere: anything inside it gets pushed back out to its
+    // surface, which is what actually makes the dent round and lets the skin
+    // slide around the finger instead of sticking to it.
+    function solveFingers() {
+      fingers.forEach(function (fg) {
+        var r = params.fingerR, r2 = r * r;
+        var cx = fg.c.x, cy = fg.c.y, cz = fg.c.z;
+        for (var i = 0; i < n; i++) {
+          var k3 = i * 3;
+          var dx = P[k3] - cx, dy = P[k3 + 1] - cy, dz = P[k3 + 2] - cz;
+          var d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 >= r2) continue;
+          if (d2 < 1e-10) { P[k3 + 1] = cy + r; continue; }
+          var s = r / Math.sqrt(d2);
+          P[k3] = cx + dx * s; P[k3 + 1] = cy + dy * s; P[k3 + 2] = cz + dz * s;
+        }
+      });
+    }
+
+    // Creep. An elastic skin always wants its original length back, which is
+    // silicone. Let the rest length drift toward whatever length it is being
+    // held at, and crawl back to the original afterwards, and you get the toys
+    // that keep the dent for a moment: dough, and slow-rise foam.
+    function creep(h) {
+      var ky = 1 - Math.exp(-params.give * h);
+      var kr = 1 - Math.exp(-params.back * h);
+      for (var e = 0; e < edgeCount; e++) {
+        var i = edgeIdx[e * 2] * 3, j = edgeIdx[e * 2 + 1] * 3;
+        var dx = P[j] - P[i], dy = P[j + 1] - P[i + 1], dz = P[j + 2] - P[i + 2];
+        var d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        var r = restLen[e];
+        r += (d - r) * ky;
+        r += (rest0[e] - r) * kr;
+        restLen[e] = r;
+      }
+    }
+
+    function recenter() {
+      var sx = 0, sy = 0, sz = 0, i;
+      for (i = 0; i < n; i++) { sx += P[i * 3]; sy += P[i * 3 + 1]; sz += P[i * 3 + 2]; }
+      sx /= n; sy /= n; sz /= n;
+      for (i = 0; i < n; i++) {
+        P[i * 3] -= sx; P[i * 3 + 1] -= sy; P[i * 3 + 2] -= sz;
+        Prev[i * 3] -= sx; Prev[i * 3 + 1] -= sy; Prev[i * 3 + 2] -= sz;
+      }
+    }
+
+    function syncGeometry() {
+      var pa = geo.attributes.position.array;
+      for (var i = 0; i < n * 3; i++) pa[i] = P[i];
+      geo.attributes.position.needsUpdate = true;
+      geo.computeVertexNormals();
+    }
+
+    // ---- sound -------------------------------------------------------------
+    function squish(press) {
+      shell.audio.grain({
+        freq: press ? 210 : 330,
+        amp: press ? 0.12 : 0.08,
+        decay: press ? 0.13 : 0.09,
+        rate: [0.3, 0.5], q: 0.9, type: "lowpass"
+      });
+      shell.audio.buzz(press ? 8 : 4);
+    }
+
+    // ---- camera ------------------------------------------------------------
+    var orbit = { az: 0.5, el: 0.35, zoom: 1 };
+    var fitDist = 7;
+
+    // The ball is a ball: its mean radius never moves off 1.0x and a hard press
+    // only pushes the silhouette out by about 3%. Measuring it every frame
+    // bought nothing and cost everything -- each press nudged the camera back
+    // and it never came forward again, so the toy slowly shrank as you played.
+    // Frame it once from a fixed radius instead, and only on an actual change.
+    function snapFit() {
+      var vFov = camera.fov * Math.PI / 180;
+      var hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+      fitDist = Math.max((RADIUS * 1.12) / Math.sin(Math.min(vFov, hFov) / 2), 2);
+    }
+
+    function placeCamera() {
+      var d = fitDist * orbit.zoom;
+      scene.fog.color.copy(shell.fogColor);
+      scene.fog.near = d * 0.9;
+      scene.fog.far = d * 2.2;
+      var ce = Math.cos(orbit.el), se = Math.sin(orbit.el);
+      camera.position.set(d * ce * Math.sin(orbit.az), d * se, d * ce * Math.cos(orbit.az));
+      camera.lookAt(0, 0, 0);
+    }
+
+    // ---- input -------------------------------------------------------------
+    var raycaster = new THREE.Raycaster();
+    var ndc = new THREE.Vector2();
+    var fingers = new Map();      // pointerId -> { ndc, depth, pressIn, c }
+    var orbitLast = new Map();
+    var pointers = new Map();
+    var pinch = null;
+    var MAX_PRESS = RADIUS * 0.72;
+
+    function down(ev) {
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pointers.size === 2) {
+        var pts = Array.from(pointers.values());
+        pinch = { d0: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), zoom0: orbit.zoom };
+      }
+      shell.ndc(ev, ndc);
+      scene.updateMatrixWorld(true);
+      raycaster.setFromCamera(ndc, camera);
+      var hits = raycaster.intersectObject(mesh, false);
+      if (hits.length) {
+        fingers.set(ev.pointerId, {
+          nx: ndc.x, ny: ndc.y,
+          depth: hits[0].distance,
+          pressIn: 0,
+          c: new THREE.Vector3()
+        });
+        squish(true);
+      } else {
+        orbitLast.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      }
+    }
+
+    function move(ev) {
+      if (!pointers.has(ev.pointerId)) return;
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+      if (pinch && pointers.size === 2) {
+        var pts = Array.from(pointers.values());
+        var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (pinch.d0 > 0) orbit.zoom = Math.max(0.5, Math.min(2.2, pinch.zoom0 * (pinch.d0 / d)));
+        return;
+      }
+
+      if (orbitLast.has(ev.pointerId)) {
+        var o = orbitLast.get(ev.pointerId);
+        orbit.az -= (ev.clientX - o.x) * 0.008;
+        orbit.el = Math.max(-1.2, Math.min(1.2, orbit.el + (ev.clientY - o.y) * 0.008));
+        o.x = ev.clientX; o.y = ev.clientY;
+        return;
+      }
+
+      var fg = fingers.get(ev.pointerId);
+      if (fg) {
+        shell.ndc(ev, ndc);
+        fg.nx = ndc.x; fg.ny = ndc.y;
+      }
+    }
+
+    function up(ev) {
+      pointers.delete(ev.pointerId);
+      if (pointers.size < 2) pinch = null;
+      orbitLast.delete(ev.pointerId);
+      if (fingers.has(ev.pointerId)) {
+        fingers.delete(ev.pointerId);
+        squish(false);
+      }
+    }
+
+    // ---- frame -------------------------------------------------------------
+    function update(dt, now) {
+      // where each fingertip sphere sits this frame
+      fingers.forEach(function (fg) {
+        fg.pressIn = Math.min(MAX_PRESS, fg.pressIn + dt * RADIUS * 3.5);
+        ndc.set(fg.nx, fg.ny);
+        raycaster.setFromCamera(ndc, camera);
+        fg.c.copy(raycaster.ray.direction)
+          .multiplyScalar(fg.depth - params.fingerR + fg.pressIn)
+          .add(raycaster.ray.origin);
+      });
+
+      var sub = 2, h = Math.min(dt, 1 / 40) / sub;
+      var dampStep = Math.pow(params.damp, h * 60);
+
+      for (var s = 0; s < sub; s++) {
+        var i;
+        for (i = 0; i < n * 3; i++) {
+          Prev[i] = P[i];
+          P[i] += Vel[i] * h;
+        }
+        for (var it = 0; it < 4; it++) {
+          solveEdges(params.stiff);
+          solveVolume(params.pressure);
+          solveNet();
+          solveWax();
+          solveFingers();
+        }
+        var inv = 1 / h;
+        for (i = 0; i < n * 3; i++) Vel[i] = (P[i] - Prev[i]) * inv * dampStep;
+        creep(h);
+        recenter();
+      }
+
+      syncGeometry();
+      updateWax(dt);
+      var vsum = 0;
+      for (var q = 0; q < n * 3; q++) vsum += Math.abs(Vel[q]);
+      crunchSound(dt, vsum / n);
+      stepBeads(Math.min(dt, 1 / 40));
+      placeCamera();
+    }
+
+    function resize(w, h) {
+      camera.aspect = w / Math.max(h, 1);
+      camera.updateProjectionMatrix();
+      snapFit();
+      placeCamera();
+    }
+
+    function rows() {
+      return [
+        shell.rowSeg("질감",
+          Object.keys(TEXTURES).map(function (id) { return { v: id, label: TEXTURES[id].label }; }),
+          textureId,
+          function (id) {
+            applyTexture(id);
+            shell.refreshPanel();     // the sliders below have to follow
+          }),
+        shell.rowSlider("말랑기", 0.25, 1, 0.01, params.stiff,
+          function (x) { return x.toFixed(2); },
+          function (v) { params.stiff = v; }),
+        shell.rowSlider("공기 압력", 0.2, 1, 0.02, params.pressure,
+          function (x) { return x.toFixed(2); },
+          function (v) { params.pressure = v; }),
+        shell.rowSlider("되돌아오는 속도", 0.75, 0.985, 0.005, params.damp,
+          function (x) { return x.toFixed(3); },
+          function (v) { params.damp = v; }),
+        shell.rowSlider("자국 남는 정도", 0, 10, 0.25, params.give,
+          function (x) { return x.toFixed(2); },
+          function (v) { params.give = v; }),
+        shell.rowSlider("자국 사라지는 속도", 0.1, 8, 0.05, params.back,
+          function (x) { return x.toFixed(2); },
+          function (v) { params.back = v; }),
+        shell.rowSlider("손가락 굵기", 0.25, 0.9, 0.01, params.fingerR,
+          function (x) { return x.toFixed(2); },
+          function (v) { params.fingerR = v; }),
+        shell.rowSeg("속",
+          Object.keys(FILLS).map(function (id) { return { v: id, label: FILLS[id].label }; }),
+          fillId,
+          function (v) { buildBeads(v); }),
+        shell.rowSeg("겉",
+          [{ v: "plain", label: "매끈" }, { v: "net", label: "그물" }, { v: "wax", label: "왁스" }],
+          skinId,
+          function (v) {
+            skinId = v;
+            netOn = v === "net";
+            waxOn = v === "wax";
+            shell.store("squishy-skin", v);
+            // the net needs enough vertices to draw a line with
+            if (netOn && params.detail < 3) {
+              shell.store("squishy-detail", "3");
+              build(3);
+              shell.refreshPanel();
+            } else {
+              buildNet();
+              buildWax();
+            }
+          }),
+        shell.rowSeg("색",
+          Object.keys(COLORS).map(function (id) { return { v: id, label: COLORS[id].label }; }),
+          colorId,
+          function (v) {
+            colorId = v;
+            mesh.material.color.setHex(COLORS[v].hex);
+            shell.store("squishy-color", v);
+          }),
+        shell.rowSeg("해상도",
+          [{ v: 1, label: "낮음" }, { v: 2, label: "보통" }, { v: 3, label: "높음" }],
+          params.detail,
+          function (d) { build(d); shell.store("squishy-detail", String(d)); }),
+        shell.rowNote("누르면 들어가고 누른 자리 옆이 부풀어 오릅니다. 갇힌 공기의 부피가 유지되기 때문입니다. 손가락 여러 개로 동시에 눌러도 되고, 누른 채 끌면 자국이 따라옵니다. 배경을 끌면 시점이 돕니다.")
+      ];
+    }
+
+    function hud() {
+      return {
+        text: TEXTURES[textureId].label + " · " + FILLS[fillId].label +
+              (netOn ? " · 그물" : "") +
+              (waxOn ? " · 왁스 " + waxIntact + "/" + plates.length : "") +
+              " · 정점 " + n + " · 알갱이 " + beadCount +
+              " · 부피 " + (volume / V0 * 100).toFixed(1) + "%" +
+              " · 손가락 " + fingers.size,
+        warn: Math.abs(volume / V0 - 1) > 0.08
+      };
+    }
+
+    // Wax is one-shot by nature, and a grain bag never springs back, so both
+    // need a way to start over.
+    function resetBall() {
+      for (var i = 0; i < n; i++) {
+        P[i * 3] = restDir[i * 3] * RADIUS;
+        P[i * 3 + 1] = restDir[i * 3 + 1] * RADIUS;
+        P[i * 3 + 2] = restDir[i * 3 + 2] * RADIUS;
+      }
+      Prev.set(P);
+      Vel.fill(0);
+      restLen.set(rest0);
+      syncGeometry();
+      buildWax();
+      if (beadCount) buildBeads(fillId);
+    }
+
+    build(params.detail);
+
+    return {
+      scene: scene, camera: camera,
+      update: update, resize: resize,
+      down: down, move: move, up: up,
+      rows: rows, hud: hud,
+      action: { label: "새 공", run: resetBall }
+    };
+  }
+
+  /* ========================================================================
+     SHELL: chrome, toy switching, frame loop
+     ======================================================================== */
+
+  var TOYS = [
+    { id: "tangle", label: "탱클", make: makeTangle },
+    { id: "keycap", label: "키캡", make: makeKeycap },
+    { id: "squishy", label: "말랑이", make: makeSquishy }
+  ];
+
+  var built = {};
+  var active = null, activeId = null;
+
+  var toybar = document.getElementById("toybar");
+  var panel = document.getElementById("panel");
+  var hudEl = document.getElementById("hud");
+  var bPanel = document.getElementById("bPanel");
+  var bTheme = document.getElementById("bTheme");
+  var bSound = document.getElementById("bSound");
+  var bAction = document.getElementById("bAction");
+
+  TOYS.forEach(function (t) {
+    var b = mk("button", null, t.label);
+    b.dataset.toy = t.id;
+    b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", function () { switchTo(t.id); });
+    toybar.appendChild(b);
+  });
+
+  function rebuildPanel() {
+    while (panel.firstChild) panel.removeChild(panel.firstChild);
+    active.rows().forEach(function (r) { panel.appendChild(r); });
+    panel.appendChild(mk("hr"));
+    panel.appendChild(rowToggle("진동", audio.haptics, function (v) {
+      audio.haptics = v;
+      store("fidget-haptics", v ? "1" : "0");
+      if (v) audio.buzz(10);
+    }));
+  }
+
+  function switchTo(id) {
+    if (activeId === id) return;
+    if (!built[id]) {
+      var def = TOYS.filter(function (t) { return t.id === id; })[0];
+      built[id] = def.make(shell);
+    }
+    active = built[id];
+    activeId = id;
+    Array.prototype.forEach.call(toybar.children, function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.toy === id));
+    });
+    rebuildPanel();
+    if (active.action) {
+      bAction.hidden = false;
+      bAction.textContent = active.action.label;
+    } else {
+      bAction.hidden = true;
+    }
+    resize();
+    store("fidget-toy", id);
+  }
+
+  function resize() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    // updateStyle must stay on. With it off the canvas gets no CSS size and is
+    // laid out at its drawing-buffer size, so on a devicePixelRatio-2 phone it
+    // renders twice the viewport and the centred toy lands in the corner. A
+    // desktop at ratio 1 hides the bug completely.
+    renderer.setSize(w, h);
+    if (active) active.resize(w, h);
+  }
+  window.addEventListener("resize", resize);
+
+  stage.addEventListener("pointerdown", function (ev) {
+    audio.init();            // browsers only allow audio to start from a gesture
+    // a pointer that is already gone throws here, and an uncaught throw would
+    // swallow the press itself
+    try { stage.setPointerCapture(ev.pointerId); } catch (e) { /* not capturable */ }
+    if (active) active.down(ev);
+  });
+  stage.addEventListener("pointermove", function (ev) { if (active) active.move(ev); });
+  stage.addEventListener("pointerup", function (ev) { if (active) active.up(ev); });
+  stage.addEventListener("pointercancel", function (ev) { if (active) active.up(ev); });
+
+  bPanel.addEventListener("click", function () {
+    panel.hidden = !panel.hidden;
+    bPanel.setAttribute("aria-expanded", String(!panel.hidden));
+    // the readouts are workbench instruments; keep them with the workbench
+    hudEl.hidden = panel.hidden;
+  });
+
+  bAction.addEventListener("click", function () {
+    if (active && active.action) active.action.run();
+  });
+
+  // Theme. The page follows the phone by default, but "follow the phone" is not
+  // always what you want from something you pick up to fiddle with, so let it
+  // be overridden and remember the choice.
+  var THEMES = ["system", "light", "dark"];
+  var THEME_LABEL = { system: "자동", light: "밝게", dark: "어둡게" };
+  var themeIdx = Math.max(0, THEMES.indexOf(store("fidget-theme") || "system"));
+
+  function applyTheme() {
+    var m = THEMES[themeIdx];
+    if (m === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", m);
+    bTheme.textContent = THEME_LABEL[m];
+    readTheme();   // the clear colour and fog live in WebGL, not in CSS
+    store("fidget-theme", m);
+  }
+  bTheme.addEventListener("click", function () {
+    themeIdx = (themeIdx + 1) % THEMES.length;
+    applyTheme();
+  });
+
+  bSound.addEventListener("click", function () {
+    audio.on = !audio.on;
+    bSound.setAttribute("aria-pressed", String(audio.on));
+    store("fidget-sound", audio.on ? "1" : "0");
+    if (audio.on) audio.init();
+  });
+
+  // ---- frame loop ----------------------------------------------------------
+  var lastT = performance.now();
+  var fpsAcc = 0, fpsCount = 0, lastHud = 0;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+    if (!active) return;
+
+    active.update(dt, now);
+    renderer.render(active.scene, active.camera);
+
+    fpsAcc += dt; fpsCount++;
+    if (!hudEl.hidden && now - lastHud > 220) {
+      lastHud = now;
+      var h = active.hud();
+      hudEl.textContent = h.text + " · " + Math.round(fpsCount / Math.max(fpsAcc, 1e-6)) + " fps";
+      hudEl.className = "hud" + (h.warn ? " warn" : "");
+      fpsAcc = 0; fpsCount = 0;
+    }
+  }
+
+  // ---- go ------------------------------------------------------------------
+  if (store("fidget-sound") === "0") {
+    audio.on = false;
+    bSound.setAttribute("aria-pressed", "false");
+  }
+  if (store("fidget-haptics") === "0") audio.haptics = false;
+  applyTheme();
+
+  var startId = store("fidget-toy");
+  if (!startId || !TOYS.some(function (t) { return t.id === startId; })) startId = "tangle";
+  switchTo(startId);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>

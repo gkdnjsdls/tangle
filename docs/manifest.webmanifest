@@ -1,7 +1,7 @@
 {
-  "name": "탱클 피젯",
-  "short_name": "탱클",
-  "description": "닫힌 고리 탱클 피젯 토이.",
+  "name": "피젯 토이",
+  "short_name": "피젯",
+  "description": "탱클과 키캡. 손가락으로 만지작거리는 토이 모음.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

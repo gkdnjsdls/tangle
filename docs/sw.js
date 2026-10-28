@@ -1,9 +1,9 @@
-/* 탱클 피젯 service worker.
+﻿/* 탱클 피젯 service worker.
    Precaches the app shell plus the two third-party files the page needs, so a
    phone that has opened it once can run it with no network at all. Bump CACHE
    whenever index.html changes, or installed copies will keep the old build. */
 
-var CACHE = "tangle-v6";
+var CACHE = "fidget-v6";
 
 var SHELL = [
   "./",
